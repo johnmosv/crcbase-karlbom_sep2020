@@ -1,9 +1,6 @@
 library(data.table)
-source("functions/crcbase_read_and_write.R")
+source("project_functions/read_write.R")
 
-project_path = create_project_path("Karlbom_sep2020")
-read_from_project_original = create_read_from_project_subfolder("data/original", project_path=project_path())
-write_to_project_original = create_write_to_project_subfolder("data/original", project_path=project_path())
 
 # Get the population ---- 
 scrcr = read_from_project_original("uk_scrcr_20210609.sas7bdat")

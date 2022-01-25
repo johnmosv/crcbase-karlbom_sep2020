@@ -6,7 +6,9 @@ require(data.table)
 
 
 read_sas_and_format <- function(path, nrows = Inf, zap_sas=TRUE) {
-    print(glue("Reading {nrows} rows"))
+    if (!is.infinite(nrows)) {
+        warning(glue("Only reading {nrows} rows"))
+    }
     d = read_sas(path, n_max = nrows)
     if (!zap_sas) {
         print("Not zapping sas file")
@@ -27,6 +29,7 @@ read_sas_and_format <- function(path, nrows = Inf, zap_sas=TRUE) {
             )
         )
     setDT(d)
+    print(glue("Read: {nrow(d)} rows | {ncol(d)} columns"))
     return(d)
 }
 
@@ -54,20 +57,20 @@ create_read_from_project_subfolder <- function(project_subfolder, project_path) 
     full_path = glue("{project_path}/{project_subfolder}")
 
     read_function = function(file_name, full_project_folder_path=full_path, nrows=Inf, zap_sas=TRUE) {
-        print(glue("Reading file from : {full_project_folder_path}"))
 
         full_file_path = glue("{full_project_folder_path}/{file_name}")
         full_file_path = normalizePath(full_file_path)
 
         if (file.exists(full_file_path)) {
-            print(glue("Reading file from project: {full_project_folder_path}"))
+            print(glue("Reading file from: {full_file_path}"))
             is_sas_file = grepl("sas7bdat", full_file_path)
             if (is_sas_file) {
-                print("reading sas file")
+                print("...as sas file...")
                 return(read_sas_and_format(full_file_path, nrows = nrows, zap_sas=zap_sas))
             }
-            print("Reading csv")
-            return(data.table::fread(full_file_path, nrows=nrows))
+            print("... as .csv...")
+            dt = data.table::fread(full_file_path, nrows=nrows)
+            print("Read: {nrow(dt)} rows | {ncol(dt)} columns")
         }
         
         files = list.files(full_project_folder_path)

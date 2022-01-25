@@ -1,0 +1,81 @@
+html {
+  scroll-behavior: smooth;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5 {
+  margin-bottom: 20px;
+}
+
+h1 {
+  margin-top: 60px;
+}
+
+h2 {
+  margin-top: 50px;
+  border-bottom: solid black 2px;
+}
+
+h3 {
+  margin-top: 40px;
+}
+
+h4 {
+  margin-top: 30px;
+}
+
+table {
+  margin-top: 60px;
+}
+
+.dt-button {
+  margin-bottom: 50px;
+}
+
+table caption {
+  font-size: 14px;
+}
+
+.datatables {
+  margin: 0 auto;
+}
+
+/* for code blocks, for the output, which do not have a class. echo has class of 'sourceCode' */
+pre:not([class]),
+pre[class=""] {
+  margin: 10px 0px 20px 0px;
+  background-color: #f7f7f7;
+  color: #242424;
+  border: 1px solid rgb(134 130 122);
+}
+
+pre.sourceCode {
+  color: #8d730d;
+}
+
+#TOC {
+  position: fixed;
+  /* background-color: rgb(233, 227, 227); */
+  top: 100px;
+  left: 0;
+  width: 250px;
+  font-size: 0.8em;
+  height: 90%;
+}
+
+#TOC li::marker {
+  padding-inline-start: 10px;
+}
+
+#TOC a {
+  color: rgb(48, 47, 47);
+}
+
+@media (max-width: 1400px) {
+  #TOC {
+    display: none;
+  }
+}

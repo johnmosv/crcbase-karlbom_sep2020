@@ -320,21 +320,3 @@ median_iqr <- function(x, remove_na = TRUE, digits = 1) {
 }
 # median_iqr(1:10)
 
-
-define_colon_location <- function(col_location) {
-    # right/left (1-5 right, 6-8 left, 9 undefined)
-    dplyr::case_when(
-        col_location %in% 1:5 ~ "right",
-        col_location %in% 6:8 ~ "left",
-        col_location == 9 ~ "undefined",
-        TRUE ~ as.character(NA)
-    )
-}
-
-define_tumour_location <- function(location) {
-    dplyr::case_when(
-        location == 1 ~ "colon",
-        location == 2 ~ "rektum",
-        TRUE ~ as.character(NA)
-    )
-}

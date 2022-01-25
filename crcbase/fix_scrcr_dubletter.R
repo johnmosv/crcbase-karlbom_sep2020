@@ -1,4 +1,4 @@
-source("functions/helpers.R")
+source("crcbase/helpers.R")
 
 fix_scrcr_dubletter <- function(scrcr, first_tumour_only = TRUE) {
     if (!is.data.table(scrcr)) setDT(scrcr)
