@@ -1,3 +1,4 @@
 [submodule "crcbase_utils"]
 	path = crcbase_utils
 	url = git@github.com:johnmosv/crcbase-utils.git
+    update = merge

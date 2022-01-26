@@ -1,0 +1,56 @@
+---
+title: "haglind_feb2020 : Create analysis-data"
+output: 
+    html_document:
+        highlight: pygments
+        theme: sandstone
+        css: style.css
+        toc: true
+        code_folding: hide
+editor_options: 
+  chunk_output_type: inline
+---
+
+__Datum__: `r lubridate::today()`
+
+```{r setup, include=FALSE, message=FALSE, warning=FALSE, echo=FALSE}
+library(data.table)
+library(dplyr)
+library(stringr)
+library(glue)
+library(janitor)
+library(here)
+library(scales)
+library(ggplot2)
+library(lubridate)
+library(rlang)
+
+source("crcbase_utils/helpers.R")
+source("crcbase_utils/crud/setup_project_crud.R")
+source("crcbase_utils/crud/read_from_variable_lists.R")
+test_for_k()
+
+knitr::opts_chunk$set(
+    # root.dir = '~/R/project',
+    warning = FALSE,
+    message = FALSE,
+    warning = FALSE,
+    echo = TRUE,
+    include = TRUE
+)
+
+if (!exists("params")) {
+    params <- list(
+        project_name = project_name # from .Renviron
+    )
+}
+
+# init tables to export
+export_tables <- list()
+```
+
+
+
+## 1. STUDY POPULATION
+
+Study population is defined in sas file and is exported in into scrcr_clean or something
