@@ -91,7 +91,7 @@ surgeries_raw <- read_from_project_original("uk_surgeries_20210609.csv")
 # TODO Missing something from PR (IPR + OPR). It contained 0 rows. Need to look at
 # first occurrence of ("C784" "C785" "C786" "C787") in patreg after diagdate_scrcr
 # used for cencoring, i think
-# relapse_pr <- #Missing
+relapse_raw <- read_from_project_original("uk_relapse_pr_20210609.csv") # TODO change to .csv
 ```
 
 # 2. STUDY POPULATION
@@ -112,6 +112,7 @@ __scrcr_ltol__ data in the sas program
 #### 1. diagdate_scrcr 2007:2016
 ```{r inclusion study period diagdate}
 scrcr_first %>% tabyl(diagyear_scrcr)
+scrcr_first <- scrcr_first[year(diagdate_scrcr) %in% 2007:2016]
 ```
 
 #### 2. diagage >= 18
@@ -154,11 +155,10 @@ scrcr_first <- scrcr_first[procedure_type == 3]
 #### 1. Previous Colorectal cancer
 
 Identified from the swedish cancer register. Any before `diagdate_scrcr`
+codes C18, C19, C20
 
 ```{r previous colorectal cancer}
-
-# Add diagdate_scrcr (it is actually already there)
-
+# TODO Add diagdate_scrcr (it is actually already there)
 ```
 
 
@@ -217,7 +217,7 @@ if (any(dead_before_indexdate)) {
 Added from FoB. Used for cencoring. Only emmigration after `index_date` are of interest
 
 ```{r add migration}
-migrations <- left_merge(pop[, .(lopnr, index_date)], migrations_raw, id_vars = "lopnr")
+migrations <- merge(migrations_raw, pop[, .(lopnr, index_date)], by = "lopnr", all.x = TRUE)
 migrations_after_first <- migrations[index_date < migrationdate, ]
 setorder(migrations_after_first, lopnr, migrationdate)
 migrations_after_first <- migrations_after_first[!duplicated(lopnr)]
@@ -235,19 +235,40 @@ Recurrent disease is assumed to have arissen 6 months prior date given in SCRCR
 
 _Also identified from the patient register_
 ```{r recurrent disease}
-first_relapse_date <- scrcr_processed %>%
+first_relapse_date_scrcr <- scrcr_processed %>%
     group_by(lopnr) %>%
-    summarise(relapse_date = min(relapse_loc_date, relapse_mets_date, na.rm = TRUE))
+    summarise(
+        relapse_scrcr_date = min(relapse_loc_date, relapse_mets_date, na.rm = TRUE)
+    )
 
-pop <- left_merge(pop, first_relapse_date, by = "lopnr")
+first_relapse_date_patreg <- relapse_raw[relapse_opr == 1 | relapse_ipr == 1, .(
+    relapse_patreg = any(truethy(relapse_opr | relapse_ipr)),
+    relapse_patreg_date = min(indate, na.rm = TRUE)
+),
+by = "lopnr"
+]
 
-relapse_before_index <- truethy(pop$relapse_date < pop$index_date)
-if (any(relapse_before_index)) {
-    print(glue("Removing {sum(relapse_before_index)} rows with relape before index date"))
-    pop <- pop[!relapse_before_index]
-}
+# add index date
+first_relapse_date_patreg <- left_merge(first_relapse_date_patreg, pop[, .(lopnr, index_date)], by = "lopnr")
+
+
+# combine relapses from the two sources
+first_relapse <- left_merge(first_relapse_date_patreg, first_relapse_date_scrcr)
+first_relapse <- first_relapse %>%
+    rowwise() %>%
+    mutate(relapse_date = min(relapse_patreg_date, relapse_scrcr_date, na.rm = TRUE))
+setDT(first_relapse)
+
 
 # TODO : Add relapse_ipr
+pop <- left_merge(pop, first_relapse[, .(lopnr, index_date, relapse_date)], by = c("lopnr", "index_date"))
+
+# Make sure there are no relapses before procedure date
+relapse_before_index <- truethy(pop$relapse_date < pop$index_date)
+if (any(relapse_before_index)) {
+    print(glue("Removing {sum(relapse_before_index)} rows with relapse before index date (proceduredate) when adding relapses from patreg"))
+    pop <- pop[!relapse_before_index]
+}
 ```
 
 ### Baseline characteristics
@@ -621,7 +642,6 @@ pop[, `:=`(
 plot_ly(data = pop) %>%
     add_trace(x = ~sbo_scrcr_fu_m, type = "histogram", name = "SBO scrcr") %>%
     add_trace(x = ~sbo_fu_m, type = "histogram", name = "SBO patreg")
-
 ```
 
 ```{r sbo surgery fu summary}
