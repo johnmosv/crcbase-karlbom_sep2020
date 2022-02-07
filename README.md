@@ -9,6 +9,12 @@
 5. add all code that start with J to surgeries
 6. a2_optyp2 -> surgery_type coding (currently 1-11)
 7. relapse_pr have 0 rows. add to cencoring factors
+8. add birthdate to be able to calculate age at proceduredate(index date)
+9. Add cci to ad
+10. Add education
+11. perop_bleed
+12. bmi_cat
+13. convert to truethy
 
 # Questions
 
@@ -30,16 +36,21 @@
 
 7. Secondary outcomes?
 
-- abpain?
-- stoma closure?
+   - abpain?
+   - stoma closure?
 
-8. Can `u0_besoksdate` be used as date for multiple events? Currently used for:
+8. There are relapses occurring before index date when using the patient register. How should they be handled?
+
+9. Can `u0_besoksdate` be used as date for multiple events?
+   Currently used for:
    - sbo_scrcr_date
    - sbo_surgery
    -
 
 - sbo_surgery_date
--
+  -o
+
+10. Cause specific risks?
 
 # Aim
 

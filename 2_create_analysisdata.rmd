@@ -299,8 +299,6 @@ pop[, bs_path_t_stage := pt]
 pop[, bs_path_t_stage_cat := pt_cat]
 
 # Location of tumour
-pop$tumour_location
-pop$tumour_side
 pop[, bs_location_of_tumour := case_when(
     tumour_location == "rectum" ~ "rectum",
     tumour_side == "right" ~ "right",

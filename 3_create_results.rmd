@@ -24,6 +24,8 @@ library(scales)
 library(ggplot2)
 library(lubridate)
 library(rlang)
+library(epitools) # CI for rate using exact method
+library(cmprsk) # CIF and competing risk
 
 source("crcbase_utils/helpers.R")
 source("crcbase_utils/crud/setup_project_crud.R")
@@ -47,4 +49,249 @@ if (!exists("params")) {
 
 # init tables to export
 export_tables <- list()
+```
+
+# Read data
+
+Created in `2_crate_analysisdata()`. Look there for details.
+
+```{r load analysis data}
+ad_raw <- read_from_project_derived("analysisdata.csv")
+
+# Remove unwanted columns
+ad <- select_analysis_data(ad_raw)
+colnames(ad)
+```
+
+```{r add factor}
+# exposed
+ad[, case := factor(case, levels = c("exposed", "unexposed"))]
+tabyl(ad, case)
+```
+
+## Create variables 
+Should move to `2_crate_analysisdata`
+
+```{r}
+
+# Age at proceduredate. Cannot find birthdate
+```
+
+# Results
+
+## Table 1
+A lot of table1 will only be available for the exposed population. Should probably seperate them into two tables.
+
+```{r table 1}
+
+table1_fun <- function(data, group = "") {
+    setDT(data)
+
+    tabl <- data[,
+        .(
+            n = .N,
+            diagage_mean = mean_sd(diagage),
+            diagage_median = median_iqr(diagage),
+            women = n_per(female),
+            bmi_mean = mean_sd(as.numeric(bmi)),
+            # bmi_under_25 = n_per(bmi_cat == "<25"),
+            # bmi_25_30 = n_per(bmi_cat == "25-30"),
+            # bmi_over_30 = n_per(bmi_cat == ">=30"),
+            # bmi_na = n_per(is.na(bmi_cat)),
+            # cci_weighted_mean = mean_sd(cci_weighted),
+            # cci_weighted_median = median_iqr(cci_weighted),
+            # education_u9 = n_per(education_cat == "<9"),
+            # education_9_to_12 = n_per(education_cat == "9-12"),
+            # education_o12 = n_per(education_cat == ">12"),
+            stage_0 = n_per(stage == 0),
+            stage_1 = n_per(stage == 1),
+            stage_2 = n_per(stage == 2),
+            stage_3 = n_per(stage == 3),
+            stage_4 = n_per(stage == 4),
+            stage_missing = n_per(is.na(stage)),
+            pt_cat1 = n_per(bs_path_t_stage_cat == 1),
+            pt_cat2 = n_per(bs_path_t_stage_cat == 2),
+            pt_cat3 = n_per(bs_path_t_stage_cat == 3),
+            pt_cat4 = n_per(bs_path_t_stage_cat == 4),
+            pt_cat5 = n_per(bs_path_t_stage_cat == 5),
+            pt_cat6 = n_per(bs_path_t_stage_cat == 6),
+            # intraop_bleeding_median = median_iqr(perop_bleed),
+            # intraop_bleeding_mean = mean_sd(perop_bleed),
+            relaspe = n_per(!is.na(relapse_date)),
+            neoadj_radiotherapy = n_per(bs_neoadj_radio),
+            minimal_invasive_surgery = n_per(bs_minimal_invasive_surgery),
+            convert_to_open = n_per(bs_convert_to_open),
+            stoma_resection = n_per(bs_stoma_resection),
+            tumour_location_left_colon = n_per(bs_location_of_tumour == "left"),
+            tumour_location_right_colon = n_per(bs_location_of_tumour == "right"),
+            tumour_location_rektum = n_per(bs_location_of_tumour == "rektum"),
+            tumour_location_undefined = n_per(bs_location_of_tumour == ""), # 9 = undefined
+            anastomotic_site_ilecolic = n_per(bs_surgery_type %in% 1:2),
+            anastomotic_site_colocolic = n_per(bs_surgery_type %in% 3:5),
+            anastomotic_site_coloilorec = n_per(bs_surgery_type %in% 6:7),
+            previous_abdominal_surgery = n_per(bs_previous_abd_surgery),
+            previous_sbo_3m_bf_diagdate = n_per(bs_previous_sbo_3m_before_diagdate),
+            previous_abpain_3m_bf_diagdate = n_per(bs_previous_abpain_3m_before_diagdate),
+            indexyear_median = median_iqr(index_year),
+            indexyear_2007_2011 = n_per(index_year %in% 2007:2011),
+            indexyear_2012_2016 = n_per(index_year %in% 2012:2016)
+        ),
+        by = group
+    ]
+
+    tabl <- transpose_dt(tabl)
+
+    return(tabl)
+}
+
+table1_fun(ad, group = "case")
+```
+
+```{r table1 run}
+```
+
+## Validation 
+For exposed only. 
+- Estimate sensitivity (true positive/true positive + false negative) of SBO in SCRCR compared to inpatient register.
+- Estimate sensitivty of SBO surgery in SCRCR compared to two inpatient algorithms.
+- The inpatient register is the gold standard. 
+- PPV as well (true positive/true positive + false positive)
+ 
+### Validation of SBO
+```{r validation sbo}
+
+# Sensitivity,
+sensitivity <- function(test, gold) {
+    true_positives <- sum(truethy(test & gold))
+    all_positives <- sum(truethy(test | gold))
+    scales::percent(true_positives / all_positives)
+}
+
+ppv <- function(test, gold) {
+    true_positives <- sum(truethy(test & gold))
+    false_negatives <- sum(truethy(test == FALSE & gold == TRUE))
+    scales::percent(true_positives / (true_positives + false_negatives))
+}
+
+ad[, .(
+    n_sbo_scrcr = n_per(sbo_scrcr),
+    n_sbo_patreg = n_per(sbo_patreg),
+    sensitivty = sensitivity(sbo_scrcr, sbo_patreg),
+    ppv = ppv(sbo_scrcr, sbo_patreg)
+)]
+```
+
+### Validation of SBO surgery
+```{r validation sbo surgery}
+ad[, .(
+    n_sbo_sugery_scrcr = n_per(sbo_surgery_scrcr),
+    n_sbo_surgery_patreg1 = n_per(sbo_surgery_patreg1),
+    n_sbo_surgery_patreg2 = n_per(sbo_surgery_patreg2),
+    sensitivty1 = sensitivity(sbo_surgery_scrcr, sbo_surgery_patreg1),
+    sensitivty2 = sensitivity(sbo_surgery_scrcr, sbo_surgery_patreg2),
+    ppv1 = ppv(sbo_surgery_scrcr, sbo_surgery_patreg1),
+    ppv2 = ppv(sbo_surgery_scrcr, sbo_surgery_patreg2)
+)]
+```
+
+
+## Incidence of SBO
+- Crude incidence of SBO for the two groups. Also stratified by timing (4 groups)
+- Should there be any adjustment done?
+- Only for Patient register
+
+```{r incidence of sbo}
+inc_sbo <- ad[, .(
+    n = sum(truethy(sbo_patreg)),
+    personyears = sum(sbo_fu_m) * 12,
+    crude_incidence = roundn(sum(truethy(sbo_patreg)) / sum(sbo_fu_m * 12) * 1000)
+), by = "case"]
+
+inc_sbo_surgery1 <- ad[, .(
+    n = sum(truethy(sbo_surgery_patreg1)),
+    personyears = sum(sbo_surgery_fu_m1) * 12,
+    crude_incidence = roundn(sum(truethy(sbo_surgery_patreg1)) / sum(sbo_surgery_fu_m1 * 12) * 1000)
+), by = "case"]
+
+inc_sbo_surgery2 <- ad[, .(
+    n = sum(truethy(sbo_surgery_patreg1)),
+    personyears = sum(sbo_surgery_fu_m1) * 12,
+    crude_incidence = roundn(sum(truethy(sbo_surgery_patreg2)) / sum(sbo_surgery_fu_m2 * 12) * 1000)
+), by = "case"]
+
+# test
+# inc_sbo <- rbindlist(list(inc_sbo, data.table(case = "unexposed", n_sbo = 50, personyears = 1000, crude_incidence = 1)))
+
+incidence_exact <- function(n, pt, dig = 1) {
+    inc_table <- epitools::pois.exact(n, pt)
+    x_ci(inc_table$rate, inc_table$lower, inc_table$upper, dig = dig)
+}
+
+incidence_row <- function(incidence_outcome, row_name) {
+    incidence_outcome[, rate_ci := incidence_exact(n, personyears / 1000)]
+    incidence_outcome[, personyears := round(personyears, 0)]
+
+    exp <- incidence_outcome[case == "exposed"]
+    unexp <- incidence_outcome[case == "unexposed"]
+    colnames(exp) <- paste0(colnames(exp), "_exp")
+    colnames(unexp) <- paste0(colnames(unexp), "_unexp")
+
+    inc_tab <- bind_cols(exp, unexp) %>%
+        select(-contains("case")) %>%
+        tibble::add_column(outcome = row_name, .before = 1)
+
+    return(inc_tab)
+}
+
+bind_rows(
+    incidence_row(inc_sbo, "sbo"),
+    incidence_row(inc_sbo_surgery1, "sbo_surgery1"),
+    incidence_row(inc_sbo_surgery2, "sbo_surgery2")
+) %>%
+    table_dt(caption = "Crude incidence of SBO and SBO surgery in exposed and unexposed")
+```
+
+
+- Incidence per 1000 person years.
+- Incidence CI estimated using the exact method.
+
+
+
+## Relative risk of SBO and SBO Surgery
+The risk of sbo in exposed relative to unexposed.
+
+```{r hazard ratio of sbo and sbo surgery, eval=FALSE}
+get_hr_ci <- function(data, event_var, fu_var) {
+    # Event, 0=alive, 1=event
+    colnames(data)[colnames(data) == event_var] <- "event"
+    colnames(data)[colnames(data) == fu_var] <- "fu"
+    if (!"event" %in% colnames(data)) {
+        stop("Cannot find 'event' variable in data")
+    }
+    if (!"fu" %in% colnames(data)) {
+        stop("Cannot find 'fu' variable in data")
+    }
+    data$event <- truethy(data$event)
+    # the model
+    cox_model <- survival::coxph(survival::Surv(fu, event == TRUE) ~ case, data = data)
+    # print(summary(cox_model))
+
+    # Only return hr (ci)
+    tidy_res <- broom::tidy(cox_model, exponentiate = TRUE, conf.int = TRUE)
+    hr_ci <- x_ci(tidy_res$estimate, tidy_res$conf.low, tidy_res$conf.high)
+
+    return(hr_ci)
+}
+
+get_hr_ci(ad, "sbo_patreg", "sbo_fu_m")
+get_hr_ci(ad, "sbo_surgery_patreg1", "sbo_surgery_fu_m1")
+get_hr_ci(ad, "sbo_surgery_patreg2", "sbo_surgery_fu_m2")
+```
+
+
+## Cumulative Incidence function
+Competing risk = 'death'
+```{r cif}
+# Competing risk of death taken into account.
+# Fine and Gray (cmprsk)
 ```
