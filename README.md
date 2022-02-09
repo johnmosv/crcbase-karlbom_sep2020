@@ -8,7 +8,7 @@
 3. cannot find a2_blodn, in scrcr
 4. add all code that start with J to seperate file `previous_abd_surgeries` _DONE_
 5. a2_optyp2 -> surgery_type coding (currently 1-11)
-6. relapse*pr have 0 rows. \_DONE*
+6. relapse_pr have 0 rows. _DONE_
    -add to cencoring factors
 7. add birthdate to be able to calculate age at proceduredate(index date) _bd not available_
 8. Add cci to ad
