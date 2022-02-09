@@ -2,19 +2,20 @@
 
 # TODOS
 
-1. Add comparators in sas program (or should we use minimal surgery as exposure?)
-2. Cancer reg: Colorectal cancers before index date (diagdate) Colorectal cancers before index date (diagdate). Add to exclusion criteria [C18, c19, c20]
-3. SBO alternative 2 (only done alt 1 for now)
-4. cannot find a2_blodn, in scrcr
-5. add all code that start with J to surgeries
-6. a2_optyp2 -> surgery_type coding (currently 1-11)
-7. relapse_pr have 0 rows. add to cencoring factors
-8. add birthdate to be able to calculate age at proceduredate(index date)
-9. Add cci to ad
-10. Add education
-11. perop_bleed
-12. bmi_cat
-13. convert to truethy
+1. Add comparators in sas program _DONE_
+2. Cancer reg: Colorectal cancers before index date (diagdate) Colorectal cancers before index date (diagdate). _DONE_
+   - Add to exclusion criteria [C18, c19, c20] _DONE_
+3. cannot find a2_blodn, in scrcr
+4. add all code that start with J to seperate file `previous_abd_surgeries` _DONE_
+5. a2_optyp2 -> surgery_type coding (currently 1-11)
+6. relapse*pr have 0 rows. \_DONE*
+   -add to cencoring factors
+7. add birthdate to be able to calculate age at proceduredate(index date) _bd not available_
+8. Add cci to ad
+9. Add education
+10. perop_bleed
+11. bmi_cat
+12. convert to truethy
 
 # Questions
 

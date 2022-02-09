@@ -52,6 +52,7 @@ knitr::opts_chunk$set(
 if (!exists("params")) {
     params <- list(
         end_of_study = "2016-12-31",
+        data_date = "20220207", # when was the original data created
         project_name = project_name # from .Renviron, loaded in setup_project_crud.R
     )
 }
@@ -66,38 +67,84 @@ Data was created in sas program `uk_20210609.sas` under project/programs of r sc
 
 ```{r read all data}
 # Charlson for population
-cci_raw <- read_from_project_original("uk_cci_20210609.csv")
+cci_exposed_raw <- read_from_project_original(glue("uk_cci_{params$data_date}.csv"))
+cci_comparators_raw <- read_from_project_original(glue("uk_cci_comparators_{params$data_date}.csv"))
 
 # Deaths for population
-cdr_raw <- read_from_project_original("uk_cdr_20210609.csv")
+cdr_raw <- read_from_project_original(glue("uk_cdr_{params$data_date}.csv"))
 
 # all iipr rows (before and after diagdate) indicating ileus, pain or hernia
 # - ileus ("K565" "K566" "K567")
 # - ab_pain (R10.0, R10.3, R10.4)
 # - ab_hernia (K40.0, K40.3, K41.0, K41.3, K42.0, K43.0, K43.3, K43.6, K44.0, K45.0, K46.0)
-ileus_raw <- read_from_project_original("uk_ileus_20211210.csv")
+ileus_raw <- read_from_project_original(glue("uk_ileus_{params$data_date}.csv"))
 
 # all migrations for poulation
-migrations_raw <- read_from_project_original("uk_migrations_20211210.csv")
+migrations_raw <- read_from_project_original(glue("uk_migrations_{params$data_date}.csv"))
 
 # scrcr for population
-scrcr_raw <- read_from_project_original("uk_scrcr_20210609.csv")
+scrcr_raw <- read_from_project_original(glue("uk_scrcr_{params$data_date}.csv"))
 
 # all ipr row with ip codes specified in study plan (lots of codes, )
 # Used to identify:
 #- stoma closure IPR ONLY (op=JFG00, JFG10, JFG20, JFG23, JFG29, JFG26,JFG30, JFG33, JFG36)
-surgeries_raw <- read_from_project_original("uk_surgeries_20210609.csv")
+surgeries_raw <- read_from_project_original(glue("uk_surgeries_{params$data_date}.csv")) # TODO still 0 rows
 
-# TODO Missing something from PR (IPR + OPR). It contained 0 rows. Need to look at
+# Previous colorectal cancer (c18-c20) used for exclusion
+previous_cr_cancer_raw <- read_from_project_original(glue("uk_previous_crc_{params$data_date}.csv"))
+previous_cr_cancer <- previous_cr_cancer_raw[diagdate_scr < diagdate_scrcr]
+
+# previous abdominal surgeries
+previous_abd_surgeries_raw <- read_from_project_original(glue("uk_previous_abd_surgeries_{params$data_date}.csv"))
+
 # first occurrence of ("C784" "C785" "C786" "C787") in patreg after diagdate_scrcr
 # used for cencoring, i think
-relapse_raw <- read_from_project_original("uk_relapse_pr_20210609.csv") # TODO change to .csv
+relapse_raw <- read_from_project_original(glue("uk_relapse_pr_{params$data_date}.csv")) # TODO change to .csv
+
+# Abdominal hernia and abdominal pain from IPR
+abd_hernia_raw <- read_from_project_original(glue("uk_abd_hernia_{params$data_date}.csv"))
+
+# Study population
+studypop <- read_from_project_original("studypopulation.csv") # Created from studypopulation_comparators.sas7bdat and scrcr after inclusion and exlusion criteria
+```
+
+```{r import ables description}
+import_tables <- list(
+    cci_exposed_raw = cci_exposed_raw,
+    cci_comparators_raw = cci_comparators_raw,
+    cdr_raw = cdr_raw,
+    ileus_raw = ileus_raw,
+    migrations_raw = migrations_raw,
+    scrcr_raw = scrcr_raw,
+    surgeries_raw = surgeries_raw,
+    previous_cr_cancer = previous_cr_cancer,
+    previous_abd_surgeries_raw = previous_abd_surgeries_raw,
+    relapse_raw = relapse_raw,
+    abd_hernia_raw = abd_hernia_raw,
+    studypop = studypop
+)
+
+exp_lopnr <- studypop[case == "exposed"]$lopnr
+comp_lopnr <- studypop[case == "unexposed"]$lopnr
+purrr::imap_dfr(import_tables, function(tbl, name) {
+    tibble::tibble(
+        name = name,
+        nrow = nrow(tbl),
+        ncol = ncol(tbl),
+        n_unique_lopnr = length(unique(tbl$lopnr)),
+        pop_in = scales::percent(mean(unique(studypop$lopnr) %in% tbl$lopnr)),
+        exp_in = scales::percent(mean(unique(exp_lopnr) %in% tbl$lopnr)),
+        comp_in = scales::percent(mean(unique(comp_lopnr) %in% tbl$lopnr))
+    )
+})
 ```
 
 # 2. STUDY POPULATION
 
-Most inclusion/exclusion criterion are alrady applied in the sas-file. Will just make sure here
-Only contains exposed for now!
+Most inclusion/exclusion criterion are alrady applied in the sas-file.  Will make controls here.
+
+Applies in this file:
+- previous colorectal cancer
 
 
 ```{r exposed popultion}
@@ -107,7 +154,7 @@ scrcr_first <- fix_scrcr_dubletter(scrcr_processed)
 
 ### Inclusion criteria
 
-__scrcr_ltol__ data in the sas program
+__scrcr_1to1__ data in the sas program
 
 #### 1. diagdate_scrcr 2007:2016
 ```{r inclusion study period diagdate}
@@ -144,7 +191,6 @@ scrcr_first <- scrcr_first[stage %in% 1:3]
 #### 5. Bowel resection 
 (procedure_type eq 3)
 
-
 ```{r inclusion procedure_type}
 tabyl(scrcr_first, procedure_type)
 scrcr_first <- scrcr_first[procedure_type == 3]
@@ -154,11 +200,27 @@ scrcr_first <- scrcr_first[procedure_type == 3]
 
 #### 1. Previous Colorectal cancer
 
-Identified from the swedish cancer register. Any before `diagdate_scrcr`
+Identified from the swedish cancer register. Any before `diagdate_scrcr` plus 3months _a bit arbitrary but almost all have a cancer diagnosis before diagdate_scrcr. Im guessing it is  the same one. Need a washout period_
 codes C18, C19, C20
+
+- This is applied to the whole population (exposed and comparators)
 
 ```{r previous colorectal cancer}
 # TODO Add diagdate_scrcr (it is actually already there)
+previous_cr_cancer[, diagdate_scr_3m := diagdate_scr %m+% months(3)]
+previous_cr_cancer[, timediff_m := lubridate::time_length(as_date(diagdate_scrcr) - as_date(diagdate_scr), unit = "months")]
+prev_crc <- previous_cr_cancer[timediff_m > 3, .(lopnr, diagdate_scr, diagdate_scrcr, timediff_m)]
+prev_crc_first <- prev_crc[, .(diagdate_crc = min(diagdate_scr), timediff_m = min(timediff_m)), by = c("lopnr", "diagdate_scrcr")]
+
+#  plot distribution
+qplot(prev_crc_first$difftime_m) + ggtitle("months since previous colorectal cancer")
+
+# add to exposed statsu
+prev_crc_first <- merge(prev_crc_first, studypop, by = c("lopnr", "diagdate_scrcr"), all.x = TRUE, all.y = FALSE)
+# n exluded
+prev_crc_first[, .N, by = "case"]
+
+studypop <- studypop[!lopnr %in% prev_crc_first$lopnr]
 ```
 
 
@@ -172,7 +234,7 @@ pop <- scrcr_first[, case := "exposed"]
 
 ### Comparators
 
-General population comparators (used for cox regression). No information from SCRCR is available for comparators.
+General population comparators. No information from SCRCR is available for comparators.
 
 _TODO_ Add comparators to study population. All comparators are identified by SCB
 
@@ -260,7 +322,6 @@ first_relapse <- first_relapse %>%
 setDT(first_relapse)
 
 
-# TODO : Add relapse_ipr
 pop <- left_merge(pop, first_relapse[, .(lopnr, index_date, relapse_date)], by = c("lopnr", "index_date"))
 
 # Make sure there are no relapses before procedure date
@@ -320,6 +381,8 @@ pop[, bs_path_t_stage := pt]
 pop[, bs_path_t_stage_cat := pt_cat]
 
 # Location of tumour
+pop$tumour_location
+pop$tumour_side
 pop[, bs_location_of_tumour := case_when(
     tumour_location == "rectum" ~ "rectum",
     tumour_side == "right" ~ "right",
