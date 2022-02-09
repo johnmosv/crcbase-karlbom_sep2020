@@ -5,17 +5,18 @@
 1. Add comparators in sas program _DONE_
 2. Cancer reg: Colorectal cancers before index date (diagdate) Colorectal cancers before index date (diagdate). _DONE_
    - Add to exclusion criteria [C18, c19, c20] _DONE_
-3. cannot find a2_blodn, in scrcr
+3. cannot find a2_blodn -> perop_bleed, in scrcr **DONE**
 4. add all code that start with J to seperate file `previous_abd_surgeries` _DONE_
-5. a2_optyp2 -> surgery_type coding (currently 1-11)
-6. relapse_pr have 0 rows. _DONE_
-   -add to cencoring factors
+   - Add as descriptive **DONE**
+5. a2_optyp2 -> surgery_type coding (currently 1-14) - add to process_scrcr **need codes**
+6. relapse_pr have 0 rows. **DONE**
 7. add birthdate to be able to calculate age at proceduredate(index date) _bd not available_
-8. Add cci to ad
-9. Add education
-10. perop_bleed
-11. bmi_cat
-12. convert to truethy
+8. Add cci to ad **DONE**
+9. Add education **DONE**
+10. bmi_cat **DONE**
+11. abodiminal pain **DONE**
+    - add at bs **DONE**
+12. abdominal hernia - at baseline?
 
 # Questions
 

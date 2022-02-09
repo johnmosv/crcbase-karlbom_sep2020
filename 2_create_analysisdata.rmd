@@ -33,6 +33,7 @@ source("crcbase_utils/crud/setup_project_crud.R")
 source("crcbase_utils/crud/read_from_variable_lists.R")
 source("crcbase_utils/process/fix_scrcr_dubletter.R")
 source("crcbase_utils/process/process_scrcr.R")
+source("crcbase_utils/process/process_lisa.R")
 # Loads a list called definitions containtin procedure_codes
 source("vars/definitions.R")
 
@@ -103,6 +104,9 @@ relapse_raw <- read_from_project_original(glue("uk_relapse_pr_{params$data_date}
 
 # Abdominal hernia and abdominal pain from IPR
 abd_hernia_raw <- read_from_project_original(glue("uk_abd_hernia_{params$data_date}.csv"))
+
+# Lisa for educational level
+lisa_raw <- read_from_project_original(glue("uk_lisa_{params$data_date}.csv"))
 
 # Study population
 studypop <- read_from_project_original("studypopulation.csv") # Created from studypopulation_comparators.sas7bdat and scrcr after inclusion and exlusion criteria
@@ -206,7 +210,7 @@ codes C18, C19, C20
 - This is applied to the whole population (exposed and comparators)
 
 ```{r previous colorectal cancer}
-# TODO Add diagdate_scrcr (it is actually already there)
+
 previous_cr_cancer[, diagdate_scr_3m := diagdate_scr %m+% months(3)]
 previous_cr_cancer[, timediff_m := lubridate::time_length(as_date(diagdate_scrcr) - as_date(diagdate_scr), unit = "months")]
 prev_crc <- previous_cr_cancer[timediff_m > 3, .(lopnr, diagdate_scr, diagdate_scrcr, timediff_m)]
@@ -229,14 +233,18 @@ studypop <- studypop[!lopnr %in% prev_crc_first$lopnr]
 Cancer surgery (bowel resection[procedure_type==3]) after colorectal cancer. Identified from SCRCR
 
 ```{r study population}
-pop <- scrcr_first[, case := "exposed"]
+# pop contains studypop information (exposed unexposed) along with scrcr variables for all exposed
+# studypop contains lopnr, diagdate_scrcr, strata, case
+pop <- left_merge(studypop, scrcr_first, by = c("lopnr"))
 ```
 
 ### Comparators
 
 General population comparators. No information from SCRCR is available for comparators.
 
-_TODO_ Add comparators to study population. All comparators are identified by SCB
+```{r}
+pop[, .N, by = "case"]
+```
 
 # 3. Variables
 
@@ -246,12 +254,12 @@ _TODO_ Add comparators to study population. All comparators are identified by SC
 
 ```{r index date}
 pop[, index_date := proceduredate]
-qplot(scrcr_first$index_date)
-
+qplot(pop$index_date)
 
 # add index date to surgeries
 surgeries <- left_merge(surgeries_raw, pop[, .(lopnr, index_date)], id_vars = "lopnr")
 ileus <- left_merge(ileus_raw, pop[, .(lopnr, index_date)], id_vars = "lopnr")
+abd_hernia <- left_merge(abd_hernia_raw, pop[, .(lopnr, index_date)])
 ```
 
 
@@ -296,6 +304,7 @@ Recurrent disease is assumed to have arissen 6 months prior date given in SCRCR
 (relapse=1 from CRC-base, date variable; first of `relapse_loc_date` or `relapse_mets_date` from CRC-Base)
 
 _Also identified from the patient register_
+
 ```{r recurrent disease}
 first_relapse_date_scrcr <- scrcr_processed %>%
     group_by(lopnr) %>%
@@ -338,20 +347,25 @@ if (any(relapse_before_index)) {
 _called exposure variables in the document_
 All variables are assessed as prevalent at baseline
 
- - Body mass index (BMI) (weight/height2  from CRC-base, kg/m2)
+ - Body mass index (BMI) (weight/height2  from CRC-base, kg/m2) *make categories*
  - Neoadjuvant radiotherapy (neoadj_rt=1 from CRC-base)
  - Minimal invasive surgery (a2_lapa=1 or a2_robotass=1 from SCRCR) _to be exposure instead?_
  - Converted to open (a2_konv=1 from SCRCR)
  - Stoma formation at resection (a2_skydd=1 or a2_perm=1 from SCRCR)
- - Intraoperative blood-loss (a2_blodn from SCRCR)
+ - Intraoperative blood-loss (a2_blodn from SCRCR) __perop_bleed = a2_blodn__
  - Pathological tumor stage (tstage_path=1-13 from CRC-base)
  - Location of tumour; right (a2_tumlage=1-5) left (a2_tumlage=6-8) rectum (a2_tumlok_beskrivning=2)
  - Colorectal cancer surgery type (a2_optyp2=01-09 [surgery_type has been derived] from SCRCR)
  - Year of surgery (`proceduredate`)
 
 ```{r baseline scrcr, include=TRUE}
-# BMI - already in data
-# pop$bmi
+# BMI - already in data, make categories
+pop[, bmi_cat := case_when(
+    bmi < 25 ~ "<25",
+    bmi < 30 ~ "25-30",
+    bmi >= 30 ~ ">=30",
+    TRUE ~ ""
+)]
 
 # neoadjuvant radiotherapy
 pop[, bs_neoadj_radio := truethy(neoadj_rt)]
@@ -374,19 +388,17 @@ pop[, bs_stoma_resection := case_when(
 pop[, .(n_stoma = sum(bs_stoma_resection)), by = .(a2_skydd, a2_perm)]
 
 # Intraop blood loss
-# pop[, intraop_bloodloss := a2_blodn] TODO
+pop[, bs_perop_bleed := perop_bleed]
 
 # patological tumour stage
 pop[, bs_path_t_stage := pt]
 pop[, bs_path_t_stage_cat := pt_cat]
 
 # Location of tumour
-pop$tumour_location
-pop$tumour_side
 pop[, bs_location_of_tumour := case_when(
-    tumour_location == "rectum" ~ "rectum",
-    tumour_side == "right" ~ "right",
-    tumour_side == "left" ~ "left",
+    location == "rectum" ~ "rectum",
+    col_location == "right" ~ "right",
+    col_location == "left" ~ "left",
     TRUE ~ ""
 )]
 
@@ -401,15 +413,18 @@ pop$index_year %>% tabyl()
 
 #### Whole population
 
-- Abdominal surgery from 1997 to before the colorectal cancer surgery (op= se list, codes from IPR) _all that starts with J_
+- Abdominal surgery from 1997 to before the colorectal cancer surgery (op= se list, codes from IPR) before diagdate_scrcr _all that starts with J_
 - SBO diagnosis (dia1-dia30=K56.5, K56.6, K56.7 from IPR) from 1997 to 3 months within CRC diagnosis (a1_diagnosdatum from SCRCR)  _added a washout period here of 0.5 months to avoid_
-- Abdominal pain: First hospitalisation for abdominal pain (dia1-dia30=R10.0, R10.3, R10.4 from IPR) from 1997 to 3 months within CRC operation (diagdate_scrcr from CRC-Base).
+- Abdominal pain: First hospitalisation for abdominal pain (dia1-dia30=R10.0, R10.3, R10.4 from IPR) from 1997 to 3 months before CRC operation (diagdate_scrcr from CRC-Base).
+- Education (from LISA)
+- Charlson (CCI)
 
 ```{r baseline all abdominal surgeries before procedure date}
 # Adominal surgeries before procedure date
-abd_surgeries_before <- surgeries[indate < index_date & code %like% "^J", .(lopnr, index_date, indate, code)]
+abd_surgeries_before <- previous_abd_surgeries_raw[indate < diagdate_scrcr & surgerycodes %like% "^J| J"]
+
 abd_surgeries_before$bs_previous_abd_surgery <- 1
-pop <- left_merge(pop, abd_surgeries_before[, .(lopnr, index_date, bs_previous_abd_surgery)], id_vars = c("lopnr", "index_date"))
+pop <- left_merge(pop, abd_surgeries_before, by = c("lopnr", "diagdate_scrcr"))
 ```
 
 ```{r baseline all sbo_3m_before}
@@ -439,14 +454,19 @@ pop <- left_merge(
 ```
 
 ```{r abdominal pain within 3m before diagdate}
-abpain_3m_before <- ileus[indate < diagdate_scrcr & abpain == 1]
+# COntains both hernia and pain
+abpain_3m_before <- abd_hernia[abpain == 1]
+
+# Create months before diagdate and select variables
 abpain_3m_before <- abpain_3m_before[
     ,
     months_before_diagdate := time_length(as_date(diagdate_scrcr) - as_date(indate), unit = "months")
 ][
     , .(lopnr, index_date, indate, diagdate_scrcr, abpain, months_before_diagdate)
 ]
+# Within 3 months
 abpain_3m_before <- abpain_3m_before[months_before_diagdate <= 3]
+
 first_abpain_3m_before_diagdate <- abpain_3m_before[, .(
     date_abpain_within_3m = min(indate),
     bs_previous_abpain_3m_before_diagdate = 1
@@ -462,6 +482,22 @@ pop <- left_join(
 )
 ```
 
+```{r education}
+most_recent_education <- get_education_from_lisa(lisa_raw, pop)
+pop <- left_merge(pop, most_recent_education[, .(lopnr, education_cat)])
+```
+
+```{r cci}
+cci <- rbindlist(list(
+    cci_exposed_raw[, .(lopnr, diagdate_scrcr, CCI_weighted)],
+    cci_comparators_raw[, .(lopnr, diagdate_scrcr, CCI_weighted)]
+))
+colnames(cci) <- str_to_lower(colnames(cci))
+
+pop <- left_merge(pop, cci, by = c("lopnr", "diagdate_scrcr"))
+```
+
+
 #### Occurs after exposure
 _Not assessed_
 
@@ -476,7 +512,7 @@ _Not assessed_
 Incarcerated abdominal hernia (dia1-dia30= K40.0, K40.3, K41.0, K41.3, K42.0, K43.0, K43.3, K43.6, K44.0, K45.0, K46.0 as primary or secondary codes in the IPR) _at the same visit as SBO_
 
 ```{r hernia}
-hernia <- ileus[ileus == 1 & abhernia == 1 & indate > index_date]
+hernia <- abd_hernia[abhernia == 1 & indate < index_date]
 hernia_first <- hernia[,
     .(hernia_at_sbo = any(abhernia), hernia_date = min(indate)),
     by = c("lopnr", "index_date")
@@ -521,8 +557,8 @@ tabyl(stoma_closures, code)
 
 # sbo_scrcr (will be missing for all comparators)
 sbo_scrcr <- scrcr_processed[u5_ileus == 1, .(
-    sbo_scrcr = any(truethy(u5_ileus, na.rm = TRUE)),
-    sbo_scrcr_date = min(u0_besoksdat, na.rm = TRUE)
+    sbo_scrcr = any(truethy(u5_ileus)),
+    sbo_scrcr_date = min(u0_besoksdat)
 ), by = "lopnr"]
 
 
