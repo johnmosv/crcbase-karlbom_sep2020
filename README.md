@@ -17,6 +17,10 @@
 11. abodiminal pain **DONE**
     - add at bs **DONE**
 12. abdominal hernia - at baseline?
+13. incorrect diagdate for 1397 comparaotrs. See strata 22519 where diagdate == 20140901 for comp and 2016-09-29/2016-11-01 for exposed **DONE**
+14. change all create datesets to filter on proceduredate instead of diagdate
+15. Unable to find a single dia with abpain in IPR (R10, 0, 1, 3)
+16. Creation of studyppulation done in R
 
 # Questions
 

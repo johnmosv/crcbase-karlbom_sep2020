@@ -26,6 +26,7 @@ library(ggplot2)
 library(lubridate)
 library(rlang)
 library(plotly)
+library(tidyr)
 
 source(".Rprofile")
 source("crcbase_utils/helpers.R")
@@ -89,7 +90,7 @@ scrcr_raw <- read_from_project_original(glue("uk_scrcr_{params$data_date}.csv"))
 # all ipr row with ip codes specified in study plan (lots of codes, )
 # Used to identify:
 #- stoma closure IPR ONLY (op=JFG00, JFG10, JFG20, JFG23, JFG29, JFG26,JFG30, JFG33, JFG36)
-surgeries_raw <- read_from_project_original(glue("uk_surgeries_{params$data_date}.csv")) # TODO still 0 rows
+surgeries_raw <- read_from_project_original(glue("uk_surgeries_{params$data_date}.csv"))
 
 # Previous colorectal cancer (c18-c20) used for exclusion
 previous_cr_cancer_raw <- read_from_project_original(glue("uk_previous_crc_{params$data_date}.csv"))
@@ -100,7 +101,7 @@ previous_abd_surgeries_raw <- read_from_project_original(glue("uk_previous_abd_s
 
 # first occurrence of ("C784" "C785" "C786" "C787") in patreg after diagdate_scrcr
 # used for cencoring, i think
-relapse_raw <- read_from_project_original(glue("uk_relapse_pr_{params$data_date}.csv")) # TODO change to .csv
+relapse_raw <- read_from_project_original(glue("uk_relapse_pr_{params$data_date}.csv"))
 
 # Abdominal hernia and abdominal pain from IPR
 abd_hernia_raw <- read_from_project_original(glue("uk_abd_hernia_{params$data_date}.csv"))
@@ -109,7 +110,7 @@ abd_hernia_raw <- read_from_project_original(glue("uk_abd_hernia_{params$data_da
 lisa_raw <- read_from_project_original(glue("uk_lisa_{params$data_date}.csv"))
 
 # Study population
-studypop <- read_from_project_original("studypopulation.csv") # Created from studypopulation_comparators.sas7bdat and scrcr after inclusion and exlusion criteria
+studypop_raw <- read_from_project_original("studypopulation.csv") # Created from studypopulation_comparators.sas7bdat and scrcr after inclusion and exlusion criteria
 ```
 
 ```{r import ables description}
@@ -125,11 +126,13 @@ import_tables <- list(
     previous_abd_surgeries_raw = previous_abd_surgeries_raw,
     relapse_raw = relapse_raw,
     abd_hernia_raw = abd_hernia_raw,
-    studypop = studypop
+    studypop_raw = studypop_raw
 )
 
+studypop <- studypop_raw
 exp_lopnr <- studypop[case == "exposed"]$lopnr
-comp_lopnr <- studypop[case == "unexposed"]$lopnr
+comp_lopnr <- studypop[case == "comparators"]$lopnr
+
 purrr::imap_dfr(import_tables, function(tbl, name) {
     tibble::tibble(
         name = name,
@@ -154,11 +157,22 @@ Applies in this file:
 ```{r exposed popultion}
 scrcr_processed <- process_scrcr(scrcr_raw)
 scrcr_first <- fix_scrcr_dubletter(scrcr_processed)
+
+# Need to add matched date to scrcr_first to be able to add it to comparators later
+pop_match_date <- studypop[case == "exposed", .(lopnr, match_date)]
+scrcr_first <- left_merge(
+    scrcr_first,
+    pop_match_date,
+    by = "lopnr"
+)
 ```
+
 
 ### Inclusion criteria
 
 __scrcr_1to1__ data in the sas program
+
+Need to check sas program to get flow chart.
 
 #### 1. diagdate_scrcr 2007:2016
 ```{r inclusion study period diagdate}
@@ -200,6 +214,12 @@ tabyl(scrcr_first, procedure_type)
 scrcr_first <- scrcr_first[procedure_type == 3]
 ```
 
+#### 6. Missing proceduredate
+```{r inclusion remove proceduredate}
+sum(is.na(scrcr_first$proceduredate))
+scrcr_first <- scrcr_first[!is.na(proceduredate)]
+```
+
 ### Exclusion criteria
 
 #### 1. Previous Colorectal cancer
@@ -214,13 +234,14 @@ codes C18, C19, C20
 previous_cr_cancer[, diagdate_scr_3m := diagdate_scr %m+% months(3)]
 previous_cr_cancer[, timediff_m := lubridate::time_length(as_date(diagdate_scrcr) - as_date(diagdate_scr), unit = "months")]
 prev_crc <- previous_cr_cancer[timediff_m > 3, .(lopnr, diagdate_scr, diagdate_scrcr, timediff_m)]
+
 prev_crc_first <- prev_crc[, .(diagdate_crc = min(diagdate_scr), timediff_m = min(timediff_m)), by = c("lopnr", "diagdate_scrcr")]
 
 #  plot distribution
-qplot(prev_crc_first$difftime_m) + ggtitle("months since previous colorectal cancer")
+qplot(prev_crc_first$timediff_m) + ggtitle("months since previous colorectal cancer")
 
 # add to exposed statsu
-prev_crc_first <- merge(prev_crc_first, studypop, by = c("lopnr", "diagdate_scrcr"), all.x = TRUE, all.y = FALSE)
+prev_crc_first <- left_join(prev_crc_first, studypop, by = c("lopnr"))
 # n exluded
 prev_crc_first[, .N, by = "case"]
 
@@ -233,9 +254,13 @@ studypop <- studypop[!lopnr %in% prev_crc_first$lopnr]
 Cancer surgery (bowel resection[procedure_type==3]) after colorectal cancer. Identified from SCRCR
 
 ```{r study population}
-# pop contains studypop information (exposed unexposed) along with scrcr variables for all exposed
-# studypop contains lopnr, diagdate_scrcr, strata, case
-pop <- left_merge(studypop, scrcr_first, by = c("lopnr"))
+# studypop contains lopnr, match_date, strata, case, birthyear and some other stuff
+# add all of the scrcr variables to exposed
+pop <- left_merge(
+    studypop,
+    scrcr_first,
+    by = c("lopnr")
+) %>% select(lopnr, strata, case, match_date, proceduredate, birthyear, everything())
 ```
 
 ### Comparators
@@ -244,6 +269,10 @@ General population comparators. No information from SCRCR is available for compa
 
 ```{r}
 pop[, .N, by = "case"]
+
+# number of comparators per exposed
+n_comp <- pop[, .(exposed = sum(case == "exposed"), comparators = sum(case == "comparators")), by = "strata"]
+n_comp[, .N, by = "comparators"]
 ```
 
 # 3. Variables
@@ -253,14 +282,30 @@ pop[, .N, by = "case"]
 `index_date` = `procedure_date` from scrcr
 
 ```{r index date}
-pop[, index_date := proceduredate]
-qplot(pop$index_date)
+# Add proceduredat *(and diagdate to be able to match on for some sources) to all
+scrcr_proceduredate <- scrcr_first[, .(lopnr, match_date, proceduredate, diagdate_scrcr)]
+colnames(scrcr_proceduredate)[colnames(scrcr_proceduredate) == "proceduredate"] <- "index_date"
+
+# Want add diagdate_scrcr to all so need to remove the one in the data which is only
+# available for exposed
+# TODO something wrong here!
+pop <- select(pop, -diagdate_scrcr)
+pop <- merge(pop, scrcr_proceduredate,
+    by.x = c("strata", "match_date"), by.y = c("lopnr", "match_date"), all.x = TRUE, all.y = FALSE
+)
+
+# Why are there missing index_date?
+# because the exposed has no proceduredate. removed in inclusion/exlusion step
+
+ggplot(pop, aes(x = index_date)) +
+    geom_histogram(binwidth = 30)
 
 # add index date to surgeries
-surgeries <- left_merge(surgeries_raw, pop[, .(lopnr, index_date)], id_vars = "lopnr")
-ileus <- left_merge(ileus_raw, pop[, .(lopnr, index_date)], id_vars = "lopnr")
-abd_hernia <- left_merge(abd_hernia_raw, pop[, .(lopnr, index_date)])
+surgeries <- merge(surgeries_raw, pop[, .(lopnr, index_date)], by = "lopnr")
+ileus <- merge(ileus_raw, pop[, .(lopnr, index_date)], by = "lopnr")
+abd_hernia <- merge(abd_hernia_raw, pop[, .(lopnr, index_date)], by = "lopnr")
 ```
+
 
 
 ### Cencoring factors
@@ -270,13 +315,15 @@ abd_hernia <- left_merge(abd_hernia_raw, pop[, .(lopnr, index_date)])
 Added from CDR. Used for cencoring.
 
 ```{r add CDR}
-pop <- left_merge(pop, cdr_raw[, .(lopnr, deathdate)], id_vars = "lopnr")
+# cdr_raw contains one row per index_date....only need the first one
+cdr <- cdr_raw[, .(deathdate = min(deathdate, na.rm = TRUE)), by = "lopnr"]
+pop <- left_merge(pop, cdr, id_vars = "lopnr")
 
 dead_before_indexdate <- truethy(pop$deathdate < pop$index_date)
 
 if (any(dead_before_indexdate)) {
-    warning(glue("deaths before index date should not be present (add CRD)
-    Removing {sum(dead_before_indexdate)} rows.
+    print(glue("deaths before index date should not be present (add CRD)
+    Removing {sum(dead_before_indexdate)} rows where deathdate occurrs before proceduredate
     "))
     pop <- pop[!dead_before_indexdate]
 }
@@ -287,6 +334,7 @@ if (any(dead_before_indexdate)) {
 Added from FoB. Used for cencoring. Only emmigration after `index_date` are of interest
 
 ```{r add migration}
+
 migrations <- merge(migrations_raw, pop[, .(lopnr, index_date)], by = "lopnr", all.x = TRUE)
 migrations_after_first <- migrations[index_date < migrationdate, ]
 setorder(migrations_after_first, lopnr, migrationdate)
@@ -303,7 +351,8 @@ pop <- left_merge(pop, emmigrations_after_first, by = c("lopnr", "index_date"))
 Recurrent disease is assumed to have arissen 6 months prior date given in SCRCR
 (relapse=1 from CRC-base, date variable; first of `relapse_loc_date` or `relapse_mets_date` from CRC-Base)
 
-_Also identified from the patient register_
+
+_Also identified from the patient register it is a bit of an issue that we have two sources of relapse identification for the exposed_
 
 ```{r recurrent disease}
 first_relapse_date_scrcr <- scrcr_processed %>%
@@ -320,11 +369,12 @@ by = "lopnr"
 ]
 
 # add index date
-first_relapse_date_patreg <- left_merge(first_relapse_date_patreg, pop[, .(lopnr, index_date)], by = "lopnr")
+first_relapse_date_patreg <- left_join(first_relapse_date_patreg, pop[, .(lopnr, index_date)], by = "lopnr")
+first_relapse_date_patreg <- first_relapse_date_patreg[!is.na(index_date)]
 
 
 # combine relapses from the two sources
-first_relapse <- left_merge(first_relapse_date_patreg, first_relapse_date_scrcr)
+first_relapse <- left_join(first_relapse_date_patreg, first_relapse_date_scrcr, by = "lopnr")
 first_relapse <- first_relapse %>%
     rowwise() %>%
     mutate(relapse_date = min(relapse_patreg_date, relapse_scrcr_date, na.rm = TRUE))
@@ -422,13 +472,13 @@ pop$index_year %>% tabyl()
 ```{r baseline all abdominal surgeries before procedure date}
 # Adominal surgeries before procedure date
 abd_surgeries_before <- previous_abd_surgeries_raw[indate < diagdate_scrcr & surgerycodes %like% "^J| J"]
-
-abd_surgeries_before$bs_previous_abd_surgery <- 1
-pop <- left_merge(pop, abd_surgeries_before, by = c("lopnr", "diagdate_scrcr"))
+first_abd_surgeries_before <- abd_surgeries_before[, .(bs_previous_abd_surgery = 1), by = c("lopnr", "diagdate_scrcr")]
+pop <- left_merge(pop, first_abd_surgeries_before, by = c("lopnr", "diagdate_scrcr"))
 ```
 
 ```{r baseline all sbo_3m_before}
 # sbo 3 months before crcdiagnosis (ileus dataset)
+# Already added index date to data
 ileus_3m_before <- ileus[indate < diagdate_scrcr & ileus == 1]
 ileus_3m_before <- ileus_3m_before[
     ,
@@ -475,7 +525,7 @@ first_abpain_3m_before_diagdate <- abpain_3m_before[, .(
 # abpain distribution
 qplot(first_abpain_3m_before_diagdate$date_abpain_within_3m) + theme_minimal()
 
-pop <- left_join(
+pop <- left_merge(
     pop,
     first_abpain_3m_before_diagdate[, .(lopnr, index_date, bs_previous_abpain_3m_before_diagdate)],
     id_vars = c("lopnr", "index_date")
@@ -484,7 +534,8 @@ pop <- left_join(
 
 ```{r education}
 most_recent_education <- get_education_from_lisa(lisa_raw, pop)
-pop <- left_merge(pop, most_recent_education[, .(lopnr, education_cat)])
+setDT(most_recent_education)
+pop <- left_merge(pop, most_recent_education[, .(lopnr, index_date, education_cat)], by = c("lopnr", "index_date"))
 ```
 
 ```{r cci}
@@ -493,8 +544,9 @@ cci <- rbindlist(list(
     cci_comparators_raw[, .(lopnr, diagdate_scrcr, CCI_weighted)]
 ))
 colnames(cci) <- str_to_lower(colnames(cci))
+cci_max <- cci[, .(cci_weighted = max(cci_weighted)), by = c("lopnr", "diagdate_scrcr")]
 
-pop <- left_merge(pop, cci, by = c("lopnr", "diagdate_scrcr"))
+pop <- left_merge(pop, cci_max, by = c("lopnr", "diagdate_scrcr"))
 ```
 
 
@@ -542,7 +594,7 @@ stoma_closures <- surgeries[code %in% definitions$procedure_codes[["stoma_closur
 
 tabyl(stoma_closures, code)
 
-# TODO : dont know when to assess
+# TODO : dont know when to assess stoma closure.
 ```
 
 
@@ -563,10 +615,12 @@ sbo_scrcr <- scrcr_processed[u5_ileus == 1, .(
 
 
 pop <- left_merge(pop, sbo_scrcr, id_vars = "lopnr")
-if (any(pop$index_date >= pop$sbo_scrcr_date)) {
+if (any(pop$index_date >= pop$sbo_scrcr_date, na.rm = TRUE)) {
     warning("sbo_scrcr_date before index_date at sbo outcome. This should not happen as only the first scrcr should be included. Need to investigate")
 }
+```
 
+```{r sbo patreg}
 # sbo_patreg
 
 # Only keep ileus (also contains hernia and abpain icds)
@@ -594,7 +648,7 @@ pop[, .(sbo_scrcr = n_per(sbo_scrcr), sbo_patreg = n_per(sbo_patreg)), by = case
 __Assuming it does not require a prios SBO diagnosis__
 
 - u5_ileus_reop_v_rde eq 1 (u0_besoksdatum for date sbo surgery)
-- alt1 k56.5-7 plus op=JAP00, JAP01, JFK00, JFK01, JFK10, JFK20, JFK96, JFK97 __Only do alt1 for now__
+- alt1 k56.5-7 plus op=JAP00, JAP01, JFK00, JFK01, JFK10, JFK20, JFK96, JFK97,
 - alt2 k56.5-7 plus op= JAP00, JAP01, JFB00, JFB01, JFB10, JFB13, JFB20, JFB21, 
                         JFB96, JFB97, JFC00, JFC01, JFC10, JFC11, JFC20, JFC21,
                         JFF10, JFF11, JFF13, JFK00, JFK01, JFK10, JFK20, JFK96, JFK97 
@@ -602,74 +656,71 @@ __Assuming it does not require a prios SBO diagnosis__
 ```{r outcome sbo-surgery}
 
 # SBO surgery scrcr
-sbo_surgery_scrcr <- scrcr_processed[u5_ileus_reop == 1,
-    .(
-        sbo_surgery_scrcr = any(truethy(u5_ileus == 1)),
+scrcr_surgery_scrcr <- scrcr_processed %>%
+    filter(u5_ileus_reop == 1) %>%
+    group_by(lopnr) %>%
+    summarise(
+        sbo_surgery_scrcr = any(u5_ileus_reop == 1, na.rm = TRUE),
         sbo_surgery_scrcr_date = min(u0_besoksdat, na.rm = TRUE)
-    ),
-    by = c("lopnr")
-]
-pop <- left_merge(pop, sbo_surgery_scrcr, id_vars = "lopnr")
+    )
+
+pop <- left_merge(pop, scrcr_surgery_scrcr, id_vars = "lopnr")
 ```
 
-```{r sbo surgeries1}
 
-# SBO sugery patreg --
+```{r sbo surgeries patreg}
+ileus_only <- ileus[ileus == 1]
 
-# only relevant codes after index_date
-sbo_surgeries1 <- surgeries %>%
-    filter(index_date < indate) %>%
-    filter(code %in% definitions$procedure_codes[["sbo_operation_alt1"]]) %>%
-    select(lopnr, index_date, indate, hdia:dia30, code)
+# Find all rows with relevant sbo operational code
+sbo_op_pattern1 <- definitions$procedure_codes[["sbo_operation_alt1"]] %>% str_c(collapse = "| ?")
+sbo_op_pattern2 <- definitions$procedure_codes[["sbo_operation_alt2"]] %>% str_c(collapse = "| ?")
+
+ileus_only[, `:=`(
+    sbo_op1 = str_detect(surgerycodes, sbo_op_pattern1),
+    sbo_op2 = str_detect(surgerycodes, sbo_op_pattern2)
+)]
+ileus_only[, .(
+    sbo_op1 = sum(sbo_op1),
+    sbo_op2 = sum(sbo_op2),
+    op1_and_op2 = sum(sbo_op1 & sbo_op2),
+    op1_or_op2 = sum(sbo_op1 | sbo_op2)
+)]
+
+sbo_surgeries <- ileus_only[sbo_op1 == 1 | sbo_op2 == 1]
+# Only visits after index date
+sbo_sugeries <- sbo_surgeries[index_date < indate]
+
 
 # Find rows with ileus icd code
-ileus_pattern <- definitions$icd_codes$ileus %>% str_c(collapse = "|")
-
 # looks through all the dia columns and returns a vector with one value per row indicating if any ileus icds are present
-sbo_surgeries1$ileus_dia <- apply(sbo_surgeries1, 1, function(x) any(str_detect(x, ileus_pattern))) %>% truethy()
-sbo_surgeries1 <- sbo_surgeries1[ileus_dia == 1]
-
-# ileus icd combined  with sugery
-sbo_surgeries_first1 <- sbo_surgeries1[,
-    .(
-        sbo_surgery_patreg1 = TRUE,
-        sbo_surgery_patreg_date1 = min(indate)
-    ),
-    by = c("lopnr", "index_date")
-]
-
-pop <- left_merge(pop, sbo_surgeries_first1, id_vars = c("lopnr", "index_date"))
-```
-
-```{r sbo surgeries2}
-
-# SBO sugery patreg --
-
-# only relevant codes after index_date
-sbo_surgeries2 <- surgeries %>%
-    filter(index_date < indate) %>%
-    filter(code %in% definitions$procedure_codes[["sbo_operation_alt2"]]) %>%
-    select(lopnr, index_date, indate, hdia:dia30, code)
-
-# Find rows with ileus icd code
+# this is already done in the ileus dataset but can keep for reality check
 ileus_pattern <- definitions$icd_codes$ileus %>% str_c(collapse = "|")
+sbo_surgeries$ileus_dia <- find_pattern_in_columns(select(sbo_surgeries, contains("dia")), ileus_pattern)
+sbo_surgeries <- sbo_surgeries[ileus_dia == TRUE]
 
-# looks through all the dia columns and returns a vector with one value per row indicating if any ileus icds are present
-sbo_surgeries2$ileus_dia <- apply(sbo_surgeries2, 1, function(x) any(str_detect(x, ileus_pattern))) %>% truethy()
-sbo_surgeries2 <- sbo_surgeries2[ileus_dia == 1]
+# sbo_surgeries <- select(sbo_surgeries, lopnr, index_date, indate, hdia, ileus_dia, sbo_op1, sbo_op2)
 
-# ileus icd combined  with sugery
-sbo_surgeries_first2 <- sbo_surgeries2[,
-    .(
-        sbo_surgery_patreg2 = TRUE,
-        sbo_surgery_patreg_date2 = min(indate)
-    ),
-    by = c("lopnr", "index_date")
-]
+sbo_surgeries[, .(
+    nrow = .N,
+    sbo_op1 = sum(sbo_op1),
+    sbo_op2 = sum(sbo_op2),
+    sbo_op1_or_2 = sum(sbo_op1 == 1 | sbo_op2 == 1)
+)]
 
-pop <- left_merge(pop, sbo_surgeries_first2, id_vars = c("lopnr", "index_date"))
+# first occurrence for each code
+first_sbo_surgeries <- sbo_surgeries %>%
+    group_by(lopnr, index_date) %>%
+    summarise(
+        .groups = "drop",
+        sbo_surgery_patreg1 = any(sbo_op1 == TRUE),
+        sbo_surgery_patreg_date1 = min(indate[sbo_op1 == TRUE]),
+        sbo_surgery_patreg2 = any(sbo_op2 == TRUE),
+        sbo_surgery_patreg_date2 = min(indate[sbo_op2 == TRUE])
+    )
+nrow(first_sbo_surgeries)
+
+pop <- left_merge(pop, first_sbo_surgeries, by = c("lopnr", "index_date"))
 ```
-
 ```{r sbo_surgery summary}
 
 pop[, .(
@@ -681,14 +732,20 @@ pop[, .(
 
 
 ### Secondary outcomes 
-Is this right? Are these secondary outcomes? Should 
+Is this right? Are these secondary outcomes? 
 
 #### 1. Abdominal pain
 
 First hospitalisation for abdominal pain (dia1-dia30=R10.0, R10.3, R10.4 from IPR) after CRC operation (proceduredate from CRC-Base). 
-
+Cannot find any R1 codes in IPR.
 ```{r outcome abdominal pain}
-abpain_after <- ileus[abpain == 1 & indate > index_date]
+abpain_after <- abd_hernia[abpain == 1 & indate > index_date]
+
+# Double check in IPR. even using just R1 does not works
+# ipr$abpain <- find_pattern_in_columns(select(ipr, contains("dia")), "^R1")
+# sum(ipr$abpain)
+# abpain = ipr[abpain == TRUE]
+# ipr %>% select(hdia:dia10, abpain)
 
 abpain_after[, .(abpain = any(abpain), abpain_date = min(indate)), by = c("lopnr", "index_date")]
 ```
@@ -707,17 +764,18 @@ __Create__:
 Which ever comes first of outcome_date, emmigration or death or Date of cancer recurrence(`relapse_date`) OR end of study (assumin `r params$end_of_study`)
 
 ```{r eof}
+pop[, end_of_study := ymd(params$end_of_study)]
+pop[, `:=`(
+    sbo_scrcr_eof = pmin(sbo_surgery_scrcr_date, deathdate, migrationdate, relapse_date, end_of_study, na.rm = TRUE),
+    sbo_surgery_scrcr_eof = pmin(deathdate, migrationdate, sbo_surgery_scrcr_date, relapse_date, end_of_study, na.rm = TRUE),
+    sbo_eof = pmin(deathdate, migrationdate, sbo_patreg_date, relapse_date, end_of_study, na.rm = TRUE),
+    sbo_surgery_eof1 = pmin(deathdate, migrationdate, sbo_surgery_patreg_date1, relapse_date, end_of_study, na.rm = TRUE),
+    sbo_surgery_eof2 = pmin(deathdate, migrationdate, sbo_surgery_patreg_date2, relapse_date, end_of_study, na.rm = TRUE)
+)]
 
-pop <- pop %>%
-    rowwise() %>%
-    mutate(
-        sbo_scrcr_eof = min(deathdate, migrationdate, sbo_scrcr_date, relapse_date, na.rm = TRUE),
-        sbo_surgery_scrcr_eof = min(deathdate, migrationdate, sbo_surgery_scrcr_date, relapse_date, na.rm = TRUE),
-        sbo_eof = min(deathdate, migrationdate, sbo_patreg_date, relapse_date, na.rm = TRUE),
-        sbo_surgery_eof1 = min(deathdate, migrationdate, sbo_surgery_patreg_date1, relapse_date, na.rm = TRUE),
-        sbo_surgery_eof2 = min(deathdate, migrationdate, sbo_surgery_patreg_date2, relapse_date, na.rm = TRUE)
-    )
-setDT(pop)
+pop %>%
+    select(sbo_surgery_scrcr_date, deathdate, migrationdate, relapse_date, sbo_scrcr_eof, contains("eof")) %>%
+    head()
 ```
 
 ### Follow up time (fu) 
@@ -764,35 +822,35 @@ __Done for__:
 
 pop[, `:=`(
     sbo_scrcr_fu_cat_m = case_when(
-        sbo_scrcr_fu_m < 0 ~ "1. <0m",
+        sbo_scrcr_fu_m < 6 ~ "1. <6m",
         sbo_scrcr_fu_m < 18 ~ "2. 6m < 18m",
         sbo_scrcr_fu_m < 41 ~ "3. 18m < 41m",
         sbo_scrcr_fu_m < 66 ~ "4. 41m < 66m",
         sbo_scrcr_fu_m >= 66 ~ "5. >=66m",
     ),
     sbo_fu_cat_m = case_when(
-        sbo_fu_m < 0 ~ "1. <0m",
+        sbo_fu_m < 6 ~ "1. <6m",
         sbo_fu_m < 18 ~ "2. 6m < 18m",
         sbo_fu_m < 41 ~ "3. 18m < 41m",
         sbo_fu_m < 66 ~ "4. 41m < 66m",
         sbo_fu_m >= 66 ~ "5. >=66m",
     ),
     sbo_surgery_fu_cat_m1 = case_when(
-        sbo_surgery_fu_m1 < 0 ~ "1. <0m",
+        sbo_surgery_fu_m1 < 6 ~ "1. <6m",
         sbo_surgery_fu_m1 < 18 ~ "2. 6m < 18m",
         sbo_surgery_fu_m1 < 41 ~ "3. 18m < 41m",
         sbo_surgery_fu_m1 < 66 ~ "4. 41m < 66m",
         sbo_surgery_fu_m1 >= 66 ~ "5. >= 66m"
     ),
     sbo_surgery_fu_cat_m2 = case_when(
-        sbo_surgery_fu_m2 < 0 ~ "1. <0m",
+        sbo_surgery_fu_m2 < 6 ~ "1. <6m",
         sbo_surgery_fu_m2 < 18 ~ "2. 6m < 18m",
         sbo_surgery_fu_m2 < 41 ~ "3. 18m < 41m",
         sbo_surgery_fu_m2 < 66 ~ "4. 41m < 66m",
         sbo_surgery_fu_m2 >= 66 ~ "5. >= 66m"
     ),
     sbo_surgery_scrcr_fu_cat_m = case_when(
-        sbo_surgery_scrcr_fu_m < 0 ~ "1. <0m",
+        sbo_surgery_scrcr_fu_m < 6 ~ "1. <6m",
         sbo_surgery_scrcr_fu_m < 18 ~ "2. 6m < 18m",
         sbo_surgery_scrcr_fu_m < 41 ~ "3. 18m < 41m",
         sbo_surgery_scrcr_fu_m < 66 ~ "4. 41m < 66m",
