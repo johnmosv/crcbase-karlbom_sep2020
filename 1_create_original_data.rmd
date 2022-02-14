@@ -1,0 +1,214 @@
+---
+title: "Karlbom"
+author: "John Moshtaghi-Svensson"
+output: 
+    html_document:
+        highlight: pygments
+        theme: sandstone
+        css: style.css
+        toc: true
+        code_folding: show
+editor_options: 
+  chunk_output_type: inline
+---
+
+__Datum__: `r lubridate::today()`
+
+```{r setup, include=FALSE, message=FALSE, warning=FALSE, echo=FALSE}
+library(data.table)
+library(dplyr)
+library(stringr)
+library(glue)
+library(janitor)
+library(here)
+library(scales)
+library(ggplot2)
+library(lubridate)
+library(rlang)
+library(plotly)
+library(tidyr)
+
+source(".Rprofile")
+source("crcbase_utils/helpers.R")
+source("crcbase_utils/crud/crcbase_read_and_write.R")
+source("crcbase_utils/crud/setup_project_crud.R")
+source("crcbase_utils/process/fix_scrcr_dubletter.R")
+source("crcbase_utils/process/process_scrcr.R")
+source("crcbase_utils/process/process_lisa.R")
+# Loads a list called definitions containtin procedure_codes
+source("vars/definitions.R")
+
+
+test_for_k()
+theme_set(theme_bw())
+
+knitr::opts_chunk$set(
+    # root.dir = '~/R/project',
+    warning = FALSE,
+    message = FALSE,
+    warning = FALSE,
+    echo = TRUE,
+    include = TRUE
+)
+
+if (!exists("params")) {
+    params <- list(
+        data_date = "20220207", # when was the original data created
+        project_name = project_name # from .Renviron, loaded in setup_project_crud.R
+    )
+}
+```
+
+# Find exposed
+Apply inclusion and exlusion criteria for the exposed. Identified from SCRCR
+
+```{r find exposed}
+# Find the exposed
+scrcr_clean <- read_only_from_crcbase_derived_csv("scrcr_clean.csv", sep = ";", dec = ".") # TODO change to , when updating data
+scrcr <- process_scrcr(scrcr_clean)
+```
+
+### Inclusion criteria
+
+#### 0. Include first ever crcr only
+Includes synchronous tumours. Handled later
+Previous crc identified from ipr i handled in `2_create_analysisdata.rmd`
+
+```{r first ever}
+scrcr[, first_diagdate_scrcr := min(diagdate_scrcr, na.rm = TRUE), by = "lopnr"]
+nrow(scrcr)
+scrcr_first <- scrcr[diagdate_scrcr == first_diagdate_scrcr]
+nrow(scrcr_first)
+```
+
+#### 1. proceduredate 2007:2016
+
+```{r inclusion study period diagdate}
+tabyl(year(scrcr$proceduredate))
+scrcr_first <- scrcr_first[year(proceduredate) %in% 2007:2016]
+nrow(scrcr_first)
+```
+
+#### 2. diagage >= 18
+As we dont have birthdate available, I am not able to calculate age at proceduredate. Only age at diagdate_scrcr is available.
+
+```{r inclusion diagage}
+scrcr_first %>%
+    ggplot(aes(x = diagage)) +
+    geom_histogram(binwidth = 1) +
+    geom_vline(xintercept = 18, linetype = "dashed", color = "red") +
+    ggtitle("Age distribution for exposed")
+```
+
+#### 3. curative_proc == 1 \
+(a2_kurativ_v_rde, curative procedure)
+
+```{r inclusion curative proc}
+tabyl(scrcr_first, curative_proc)
+scrcr_first <- scrcr_first[curative_proc == 1]
+nrow(scrcr_first)
+```
+
+
+#### 4. stage in 1-3 or cm == 0 
+(cm == cM stage). Stage derived from cm, ct, cp
+
+```{r inclusion stage}
+tabyl(scrcr_first, stage)
+scrcr_first <- scrcr_first[stage %in% 1:3]
+nrow(scrcr_first)
+```
+
+#### 5. Bowel resection 
+(procedure_type eq 3)
+
+```{r inclusion procedure_type}
+tabyl(scrcr_first, procedure_type)
+scrcr_first <- scrcr_first[procedure_type == 3]
+nrow(scrcr_first)
+```
+
+#### 6. Remove synchronous tumours
+
+Keep the row with the most information
+
+```{r remove synchronous tumours}
+scrcr_first <- fix_scrcr_dubletter(scrcr_first)
+```
+
+```{r}
+write_to_project_original(scrcr_first, "uk_scrcr_20220207.csv")
+```
+
+## Studypopulation
+Add comparators
+
+```{r add comparators}
+
+studypopulation <- read_studypopulation(exp_lopnrs = scrcr_first$lopnr)
+if (nrow(studypopulation)) {
+    warning("studypopulation has 0 rows. Check read")
+}
+# ADD proceduredate from scrcr
+studypopulation <- left_join(
+    studypopulation,
+    scrcr_first[, .(lopnr, diagdate_scrcr, proceduredate)],
+    by = c("strata" = "lopnr", "match_date" = "diagdate_scrcr")
+)
+
+studypopulation[, index_date := proceduredate]
+nrow(studypopulation)
+
+write_to_project_original(studypopulation, "studypopulation.csv")
+```
+
+# Datasets
+
+## SBO Surgeries
+
+```{r sbo surgeries}
+# SBO surgeries directly from ipr (not sed) ----
+# all sbo surgeries. Not just the ones before. dont have index date available here.
+ipr_clean <- read_only_from_crcbase_derived_csv("ipr_clean.csv", sep = ",", dec = ".", lopnr = studypopulation$lopnr)
+ipr <- ipr_clean %>% select(lopnr, indate, hdia, dia1:dia30, surgerycodes)
+
+# find the relevant codes (op)
+# patterns for operations. Should allow optional leading whitespace
+sbo_op_pattern1 <- definitions$procedure_codes[["sbo_operation_alt1"]] %>% str_c(collapse = "| ?")
+sbo_op_pattern2 <- definitions$procedure_codes[["sbo_operation_alt2"]] %>% str_c(collapse = "| ?")
+
+ipr[, `:=`(
+    sbo_op1 = str_detect(surgerycodes, sbo_op_pattern1),
+    sbo_op2 = str_detect(surgerycodes, sbo_op_pattern2)
+)]
+ipr[, .(sum(sbo_op1), sum(sbo_op2))]
+sbo_surgeries <- ipr[sbo_op1 == 1 | sbo_op2 == 2]
+nrow(sbo_surgeries)
+
+
+# Find rows with ileus icd code
+ileus_pattern <- definitions$icd_codes$ileus %>% str_c(collapse = "|")
+
+# looks through all the dia columns and returns a vector with one value per row indicating if any ileus icds are present
+sbo_surgeries$ileus_dia <- find_pattern_in_columns(select(sbo_surgeries, contains("dia")), ileus_pattern)
+sbo_surgeries_dias <- sbo_surgeries[ileus_dia == TRUE]
+nrow(sbo_surgeries_dias)
+sbo_surgeries_dias[, .(
+    nrow = .N,
+    sum(sbo_op1),
+    sum(sbo_op2),
+    sum(sbo_op1 == 1 | sbo_op1 == 1)
+)]
+```
+
+## Migrations
+```{r}
+# type 1 = immigration
+# type 2 = emmmigration
+migrations <- read_only_from_crcbase_derived_csv("migrations_clean.csv", lopnrs = studypopulation$lopnr, sep = ",", dec = ".") # TODO change seperator to ";"
+
+migrations[, migration_type := ifelse(type == 2, "emmigration", "imigration")]
+migrations <- left_merge(migrations, studypopulation[, .(lopnr, index_date)], by = "lopnr")
+migrations <- migrations[migrationdate >= index_date]
+write_to_project_original(migrations, "uk_migrations_20220207.csv")
+```
