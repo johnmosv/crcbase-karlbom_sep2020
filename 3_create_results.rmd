@@ -1,5 +1,5 @@
 ---
-title: "haglind_feb2020 : Create analysis-data"
+title: "Karlbom : Create analysis-data"
 output: 
     html_document:
         highlight: pygments

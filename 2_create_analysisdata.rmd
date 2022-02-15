@@ -1,5 +1,5 @@
 ---
-title: "Karlbom"
+title: "Karlbom: Create analysisdata"
 author: "John Moshtaghi-Svensson"
 output: 
     html_document:
@@ -63,8 +63,8 @@ if (!exists("params")) {
 Combines all data tables in project/data/original into one dataset and create all necessary new variables
 
 # 1. Datasets
-
-Data was created in sas program `uk_20210609.sas` under project/programs of r script `1_create_original_data.R` found in this project folder.
+Studypopulation and migrations were created in `programs/crcbase-karlbom/1_create_original_data.R`
+All of the sas files created in `programs/uk_20210609.sas` uses studypopulation to filter on lopnr
 
 ```{r read all data}
 # Charlson for population

@@ -3,7 +3,7 @@
 # TODOS
 
 1. Add comparators in sas program _DONE_
-2. Cancer reg: Colorectal cancers before index date (diagdate) Colorectal cancers before index date (diagdate). _DONE_
+2. Cancer reg: Colorectal ancers before index date (diagdate) Colorectal cancers before index date (diagdate). _DONE_
    - Add to exclusion criteria [C18, c19, c20] _DONE_
 3. cannot find a2_blodn -> perop_bleed, in scrcr **DONE**
 4. add all code that start with J to seperate file `previous_abd_surgeries` _DONE_
@@ -18,9 +18,14 @@
     - add at bs **DONE**
 12. abdominal hernia - at baseline?
 13. incorrect diagdate for 1397 comparaotrs. See strata 22519 where diagdate == 20140901 for comp and 2016-09-29/2016-11-01 for exposed **DONE**
-14. change all create datesets to filter on proceduredate instead of diagdate
+14. _DONE_ change all create datesets to filter on proceduredate instead of diagdate
 15. Unable to find a single dia with abpain in IPR (R10, 0, 1, 3)
-16. Creation of studyppulation done in R
+16. _DONE_ Creation of studyppulation done in R
+17. _DONE_ Make sure all csv are rewritten with the new sep = ";"
+18. run uk_20220207 and hope it all works with the new studypopulation merge
+19. create new fake data
+20. Change all infiles in 2_create_analysisdata.rdm
+21. Crete new strata definitions according to tables in analysisplan
 
 # Questions
 
@@ -49,12 +54,10 @@
 
 9. Can `u0_besoksdate` be used as date for multiple events?
    Currently used for:
+
    - sbo_scrcr_date
    - sbo_surgery
    -
-
-- sbo_surgery_date
-  -o
 
 10. Cause specific risks?
 

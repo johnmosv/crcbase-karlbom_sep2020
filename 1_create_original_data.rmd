@@ -1,5 +1,5 @@
 ---
-title: "Karlbom"
+title: "Karlbom: Create original data"
 author: "John Moshtaghi-Svensson"
 output: 
     html_document:
@@ -35,6 +35,7 @@ source("crcbase_utils/crud/setup_project_crud.R")
 source("crcbase_utils/process/fix_scrcr_dubletter.R")
 source("crcbase_utils/process/process_scrcr.R")
 source("crcbase_utils/process/process_lisa.R")
+source("crcbase_utils/crud/read_data.R")
 # Loads a list called definitions containtin procedure_codes
 source("vars/definitions.R")
 
@@ -59,12 +60,18 @@ if (!exists("params")) {
 }
 ```
 
+# create
+
+- uk_scrcr.csv
+- studypopulation.csv
+- migrations.csv
+
 # Find exposed
 Apply inclusion and exlusion criteria for the exposed. Identified from SCRCR
 
 ```{r find exposed}
 # Find the exposed
-scrcr_clean <- read_only_from_crcbase_derived_csv("scrcr_clean.csv", sep = ";", dec = ".") # TODO change to , when updating data
+scrcr_clean <- read_only_from_crcbase_derived_csv("scrcr_clean.csv")
 scrcr <- process_scrcr(scrcr_clean)
 ```
 
@@ -149,14 +156,16 @@ studypopulation <- read_studypopulation(exp_lopnrs = scrcr_first$lopnr)
 if (nrow(studypopulation)) {
     warning("studypopulation has 0 rows. Check read")
 }
-# ADD proceduredate from scrcr
+# ADD proceduredate and diagadte_scrcr from scrcr
 studypopulation <- left_join(
     studypopulation,
     scrcr_first[, .(lopnr, diagdate_scrcr, proceduredate)],
     by = c("strata" = "lopnr", "match_date" = "diagdate_scrcr")
 )
-
+# make sure it is evident that match_date and diagdate_scrcr are the same
+studypopulation[, diagdate_scrcr := match_date]
 studypopulation[, index_date := proceduredate]
+
 nrow(studypopulation)
 
 write_to_project_original(studypopulation, "studypopulation.csv")
@@ -166,10 +175,10 @@ write_to_project_original(studypopulation, "studypopulation.csv")
 
 ## SBO Surgeries
 
-```{r sbo surgeries}
+```{r sbo surgeries, eval=FALSE}
 # SBO surgeries directly from ipr (not sed) ----
 # all sbo surgeries. Not just the ones before. dont have index date available here.
-ipr_clean <- read_only_from_crcbase_derived_csv("ipr_clean.csv", sep = ",", dec = ".", lopnr = studypopulation$lopnr)
+ipr_clean <- read_only_from_crcbase_derived_csv("ipr_clean.csv", lopnr = studypopulation$lopnr)
 ipr <- ipr_clean %>% select(lopnr, indate, hdia, dia1:dia30, surgerycodes)
 
 # find the relevant codes (op)
@@ -205,10 +214,9 @@ sbo_surgeries_dias[, .(
 ```{r}
 # type 1 = immigration
 # type 2 = emmmigration
-migrations <- read_only_from_crcbase_derived_csv("migrations_clean.csv", lopnrs = studypopulation$lopnr, sep = ",", dec = ".") # TODO change seperator to ";"
-
+migrations <- read_only_from_crcbase_derived_csv("migrations_clean.csv", lopnrs = studypopulation$lopnr)
 migrations[, migration_type := ifelse(type == 2, "emmigration", "imigration")]
-migrations <- left_merge(migrations, studypopulation[, .(lopnr, index_date)], by = "lopnr")
+migrations <- left_join(migrations, studypopulation[, .(lopnr, index_date)], by = "lopnr")
 migrations <- migrations[migrationdate >= index_date]
 write_to_project_original(migrations, "uk_migrations_20220207.csv")
 ```
