@@ -63,8 +63,9 @@ if (!exists("params")) {
 # create
 
 - uk_scrcr.csv
-- studypopulation.csv
-- migrations.csv
+- uk_studypopulation.csv
+- uk_migrations.csv
+- uk_abd_surgeries_before_diagdate
 
 # Find exposed
 Apply inclusion and exlusion criteria for the exposed. Identified from SCRCR
@@ -173,13 +174,28 @@ write_to_project_original(studypopulation, "studypopulation.csv")
 
 # Datasets
 
+## Previous abdominal surgeries
+all op-codes starting with J before diagdate_scrcr. Using diagdate instead to not identify the actual exposure from IPR.
+```{r previous abominal surgies}
+ipr_clean <- read_only_from_crcbase_derived_csv("ipr_clean.csv", lopnr = studypopulation$lopnr)
+ipr <- ipr_clean %>% select(lopnr, indate, hdia, dia1:dia30, surgerycodes)
+
+ipr_j <- ipr_clean[surgerycodes %like% "^J|^ J"]
+nrow(ipr_j2)
+ipr_j2 <- left_join(ipr_j, studypopulation[, .(lopnr, diagdate_scrcr)], by = "lopnr")
+nrow(ipr_j2)
+# Rows are added because there are duplicates in studypopulation. One can be comparator and the exposed or simply be sampled as comparators twice
+abd_surgeries_before_diagdate <- ipr_j2[indate < diagdate_scrcr]
+nrow(abd_surgeries_before_diagdate)
+write_to_project_original(abd_surgeries_before_diagdate, "uk_abd_surgeries_before_diagdate_20220207.csv")
+```
+
+
 ## SBO Surgeries
 
 ```{r sbo surgeries, eval=FALSE}
 # SBO surgeries directly from ipr (not sed) ----
 # all sbo surgeries. Not just the ones before. dont have index date available here.
-ipr_clean <- read_only_from_crcbase_derived_csv("ipr_clean.csv", lopnr = studypopulation$lopnr)
-ipr <- ipr_clean %>% select(lopnr, indate, hdia, dia1:dia30, surgerycodes)
 
 # find the relevant codes (op)
 # patterns for operations. Should allow optional leading whitespace
