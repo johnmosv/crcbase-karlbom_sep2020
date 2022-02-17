@@ -8,10 +8,19 @@ output:
         toc: true
         code_folding: hide
 editor_options: 
+title: "haglind_feb2020 : Create analysis-data"
+output:
+  html_document:
+    highlight: pygments
+    theme: sandstone
+    css: style.css
+    toc: true
+    code_folding: hide
+editor_options:
   chunk_output_type: inline
 ---
 
-__Datum__: `r lubridate::today()`
+**Datum**: `r lubridate::today()`
 
 ```{r setup, include=FALSE, message=FALSE, warning=FALSE, echo=FALSE}
 library(data.table)
@@ -69,7 +78,8 @@ ad[, case := factor(case, levels = c("exposed", "unexposed"))]
 tabyl(ad, case)
 ```
 
-## Create variables 
+## Create variables
+
 Should move to `2_crate_analysisdata`
 
 ```{r}
@@ -80,6 +90,7 @@ Should move to `2_crate_analysisdata`
 # Results
 
 ## Table 1
+
 A lot of table1 will only be available for the exposed population. Should probably seperate them into two tables.
 
 ```{r table 1}
@@ -93,35 +104,66 @@ table1_fun <- function(data, group = "") {
             diagage_mean = mean_sd(diagage),
             diagage_median = median_iqr(diagage),
             women = n_per(female),
-            bmi_mean = mean_sd(as.numeric(bmi)),
+            cci_0 = n_per(cci_weighted == 0),
+            cci_1 = n_per(cci_weighted == 1),
+            cci_2 = n_per(cci_weighted == 2),
+            cci_o2 = n_per(cci_weighted > 2),
+            cci_weighted_mean = mean_sd(cci_weighted),
+            cci_weighted_median = median_iqr(cci_weighted),
             bmi_under_25 = n_per(bmi_cat == "<25"),
             bmi_25_30 = n_per(bmi_cat == "25-30"),
             bmi_over_30 = n_per(bmi_cat == ">=30"),
             bmi_na = n_per(is_na(bmi_cat)),
-            cci_weighted_mean = mean_sd(cci_weighted),
-            cci_weighted_median = median_iqr(cci_weighted),
             education_u9 = n_per(education_cat == "<9"),
             education_9_to_12 = n_per(education_cat == "9-12"),
             education_o12 = n_per(education_cat == ">12"),
+            previous_abdominal_surgery = n_per(bs_previous_abd_surgery),
+            neoadj_radiotherapy = n_per(bs_neoadj_radio),
+            method = "which variable?",
+            procedure = "surgery_type",
+            st_il_res = n_per(surgery_type == 1),
+            st_right_hem = n_per(surgery_type == 2),
+            st_trans_res = n_per(surgery_type == 3),
+            st_left_hem = n_per(surgery_type == 4),
+            st_sigmoid_res = n_per(surgery_type == 5),
+            st_total = n_per(surgery_type == 6),
+            st_lower_ar = n_per(surgery_type == 7),
+            st_rectum_amp = n_per(surgery_type == 8),
+            st_hart = n_per(surgery_type == 9),
+            st_tem = n_per(surgery_type == 10),
+            st_local_ex = n_per(surgery_type == 11),
+            st_laparatomi = n_per(surgery_type == 12),
+            st_other = n_per(surgery_type == 13),
+            st_appendectomy = n_per(surgery_type == 14),
+            stoma_resection = n_per(bs_stoma_resection),
+            perop_bleed_u150 = n_per(bs_perop_bleed < 150),
+            perop_bleed_150_300 = n_per(bs_perop_bleed >= 150 & bs_perop_bleed < 300),
+            perop_bleed_o300 = n_per(bs_perop_bleed > 300),
+            perop_bleed_na = n_per(is.na(bs_perop_bleed)),
+            perop_bleed_median = median_iqr(bs_perop_bleed),
+            perop_bleed_mean = mean_sd(bs_perop_bleed),
+            reoperation = "after index",
+            fascial_dehiscence = "after index",
+            al = "after index",
             stage_0 = n_per(stage == 0),
             stage_1 = n_per(stage == 1),
             stage_2 = n_per(stage == 2),
             stage_3 = n_per(stage == 3),
             stage_4 = n_per(stage == 4),
             stage_missing = n_per(is.na(stage)),
-            pt_cat1 = n_per(bs_path_t_stage_cat == 1),
+            pt_cat1 = n_per(bs_path_t_stage_cat == 1), # 0-3 and 4 is wanted. But contains 1-6
             pt_cat2 = n_per(bs_path_t_stage_cat == 2),
             pt_cat3 = n_per(bs_path_t_stage_cat == 3),
             pt_cat4 = n_per(bs_path_t_stage_cat == 4),
             pt_cat5 = n_per(bs_path_t_stage_cat == 5),
             pt_cat6 = n_per(bs_path_t_stage_cat == 6),
-            perop_bleed_median = median_iqr(bs_perop_bleed),
-            perop_bleed_mean = mean_sd(bs_perop_bleed),
-            relaspe = n_per(!is.na(relapse_date)),
-            neoadj_radiotherapy = n_per(bs_neoadj_radio),
+            adjuvant_chemo = n_per(adj_ct),
+            indexyear_2007_2010 = n_per(index_year %in% 2007:2010),
+            indexyear_2011_2012 = n_per(index_year %in% 2011:2012),
+            indexyear_2013_2016 = n_per(index_year %in% 2013:2016),
+            other_baseline_char = "",
             minimal_invasive_surgery = n_per(bs_minimal_invasive_surgery),
             convert_to_open = n_per(bs_convert_to_open),
-            stoma_resection = n_per(bs_stoma_resection),
             tumour_location_left_colon = n_per(bs_location_of_tumour == "left"),
             tumour_location_right_colon = n_per(bs_location_of_tumour == "right"),
             tumour_location_rektum = n_per(bs_location_of_tumour == "rektum"),
@@ -129,12 +171,12 @@ table1_fun <- function(data, group = "") {
             anastomotic_site_ilecolic = n_per(bs_surgery_type %in% 1:2),
             anastomotic_site_colocolic = n_per(bs_surgery_type %in% 3:5),
             anastomotic_site_coloilorec = n_per(bs_surgery_type %in% 6:7),
-            previous_abdominal_surgery = n_per(bs_previous_abd_surgery),
             previous_sbo_3m_bf_diagdate = n_per(bs_previous_sbo_3m_before_diagdate),
             previous_abpain_3m_bf_diagdate = n_per(bs_previous_abpain_3m_before_diagdate),
             indexyear_median = median_iqr(index_year),
-            indexyear_2007_2011 = n_per(index_year %in% 2007:2011),
-            indexyear_2012_2016 = n_per(index_year %in% 2012:2016)
+            # after index date
+            relaspe = n_per(!is.na(relapse_date)),
+            death = n_per(!is.na(deathdate))
         ),
         by = group
     ]
@@ -148,16 +190,20 @@ table1_fun(ad, group = "case")
 ```
 
 ```{r table1 run}
+
 ```
 
-## Validation 
-For exposed only. 
+## Validation
+
+For exposed only.
+
 - Estimate sensitivity (true positive/true positive + false negative) of SBO in SCRCR compared to inpatient register.
 - Estimate sensitivty of SBO surgery in SCRCR compared to two inpatient algorithms.
-- The inpatient register is the gold standard. 
+- The inpatient register is the gold standard.
 - PPV as well (true positive/true positive + false positive)
- 
+
 ### Validation of SBO
+
 ```{r validation sbo}
 
 # Sensitivity,
@@ -182,6 +228,7 @@ ad[, .(
 ```
 
 ### Validation of SBO surgery
+
 ```{r validation sbo surgery}
 ad[, .(
     n_sbo_sugery_scrcr = n_per(sbo_surgery_scrcr),
@@ -194,8 +241,8 @@ ad[, .(
 )]
 ```
 
-
 ## Incidence of SBO
+
 - Crude incidence of SBO for the two groups. Also stratified by timing (4 groups)
 - Should there be any adjustment done?
 - Only for Patient register
@@ -220,7 +267,9 @@ inc_sbo_surgery2 <- ad[, .(
 ), by = "case"]
 
 # test
-# inc_sbo <- rbindlist(list(inc_sbo, data.table(case = "unexposed", n_sbo = 50, personyears = 1000, crude_incidence = 1)))
+# inc_sbo <- rbindlist(list(
+# inc_sbo, data.table(case = "unexposed", n_sbo = 50,
+# personyears = 1000, crude_incidence = 1)))
 
 incidence_exact <- function(n, pt, dig = 1) {
     inc_table <- epitools::pois.exact(n, pt)
@@ -251,13 +300,11 @@ bind_rows(
     table_dt(caption = "Crude incidence of SBO and SBO surgery in exposed and unexposed")
 ```
 
-
 - Incidence per 1000 person years.
 - Incidence CI estimated using the exact method.
 
-
-
 ## Relative risk of SBO and SBO Surgery
+
 The risk of sbo in exposed relative to unexposed.
 
 ```{r hazard ratio of sbo and sbo surgery, eval=FALSE}
@@ -288,9 +335,10 @@ get_hr_ci(ad, "sbo_surgery_patreg1", "sbo_surgery_fu_m1")
 get_hr_ci(ad, "sbo_surgery_patreg2", "sbo_surgery_fu_m2")
 ```
 
-
 ## Cumulative Incidence function
+
 Competing risk = 'death'
+
 ```{r cif}
 # Competing risk of death taken into account.
 # Fine and Gray (cmprsk)
