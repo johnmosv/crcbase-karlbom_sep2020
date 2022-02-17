@@ -22,15 +22,17 @@
 15. Unable to find a single dia with abpain in IPR (R10, 0, 1, 3)
 16. _DONE_ Creation of studyppulation done in R
 17. _DONE_ Make sure all csv are rewritten with the new sep = ";"
-18. run uk_20220207 and hope it all works with the new studypopulation merge
-19. create new fake data
-20. Change all infiles in 2_create_analysisdata.rdm
-21. Crete new strata definitions according to tables in analysisplan
+18. **DONE** run uk_20220207 and hope it all works with the new studypopulation merge
+19. _DONE_ create new fake data
+20. _DONE_ Change all infiles in 2_create_analysisdata.rdm
+21. _DONE_ run_create_analysisdata()
+22. Crete new strata definitions in results according to tables in analysisplan
+23. Create results
 
 # Questions
 
 1. SBO mechanisms:
-   Should hernia be assessed in between exposure and outcome (SBO only or surgery also) _asuming same time as SBO_
+   Should hernia and stoma closure be assessed in between exposure and outcome (SBO only or surgery also) _asuming same time as SBO_
 
 2. Should time to SBO surgery be assessed from SBO or from exposure (procedure date)?
 
@@ -52,14 +54,13 @@
 
 8. There are relapses occurring before index date when using the patient register. How should they be handled?
 
-9. Can `u0_besoksdate` be used as date for multiple events?
-   Currently used for:
+9. Relapse taken from
 
-   - sbo_scrcr_date
-   - sbo_surgery
-   -
+10. Cause specific risks
 
-10. Cause specific risks?
+11. Remove scrcr as a source for relapse as it is not available for comparators
+
+12. Is this interesting to compare agains general population? Seems the hr will be ~10
 
 # Aim
 

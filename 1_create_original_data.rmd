@@ -106,6 +106,8 @@ scrcr_first %>%
     geom_histogram(binwidth = 1) +
     geom_vline(xintercept = 18, linetype = "dashed", color = "red") +
     ggtitle("Age distribution for exposed")
+
+scrcr_first <- scrcr_first[diagage >= 18]
 ```
 
 #### 3. curative_proc == 1 \
@@ -145,7 +147,9 @@ scrcr_first <- fix_scrcr_dubletter(scrcr_first)
 ```
 
 ```{r}
-write_to_project_original(scrcr_first, "uk_scrcr_20220207.csv")
+write_to_project_original(scrcr_first, "uk_scrcr_first_20220207.csv")
+# Also write scrcr_clean with all crc for exposed
+write_to_project_original(scrcr_clean[lopnr %in% scrcr_first$lopnr], "uk_scrcr_clean_20220207.csv")
 ```
 
 ## Studypopulation
@@ -181,9 +185,9 @@ ipr_clean <- read_only_from_crcbase_derived_csv("ipr_clean.csv", lopnr = studypo
 ipr <- ipr_clean %>% select(lopnr, indate, hdia, dia1:dia30, surgerycodes)
 
 ipr_j <- ipr_clean[surgerycodes %like% "^J|^ J"]
-nrow(ipr_j2)
+nrow(ipr_j)
 ipr_j2 <- left_join(ipr_j, studypopulation[, .(lopnr, diagdate_scrcr)], by = "lopnr")
-nrow(ipr_j2)
+nrow(ipr_j)
 # Rows are added because there are duplicates in studypopulation. One can be comparator and the exposed or simply be sampled as comparators twice
 abd_surgeries_before_diagdate <- ipr_j2[indate < diagdate_scrcr]
 nrow(abd_surgeries_before_diagdate)
