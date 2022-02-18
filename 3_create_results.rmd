@@ -1,21 +1,12 @@
 ---
-title: "Karlbom : Create analysis-data"
-output: 
-    html_document:
-        highlight: pygments
-        theme: sandstone
-        css: style.css
-        toc: true
-        code_folding: hide
-editor_options: 
-title: "haglind_feb2020 : Create analysis-data"
+title: "Karlbom : Create results"
 output:
   html_document:
     highlight: pygments
     theme: sandstone
     css: style.css
     toc: true
-    code_folding: hide
+    code_folding: show
 editor_options:
   chunk_output_type: inline
 ---
@@ -60,7 +51,7 @@ if (!exists("params")) {
 export_tables <- list()
 ```
 
-# Read data
+# Read analysis data
 
 Created in `2_crate_analysisdata()`. Look there for details.
 
@@ -69,12 +60,13 @@ ad_raw <- read_from_project_derived("analysisdata.csv")
 
 # Remove unwanted columns
 ad <- select_analysis_data(ad_raw)
-colnames(ad)
+# paste0(colnames(ad), collapse = " | ")
 ```
 
+### Create factors
 ```{r add factor}
 # exposed
-ad[, case := factor(case, levels = c("exposed", "unexposed"))]
+ad[, case := factor(case, levels = c("exposed", "comparators"))]
 tabyl(ad, case)
 ```
 
@@ -85,13 +77,31 @@ Should move to `2_crate_analysisdata`
 ```{r}
 
 # Age at proceduredate. Cannot find birthdate
+
+# Categorize follow up time
+
+
+cat_followup <- function(x) {
+    cat_numeric(x, cutoffs = c(6, 18, 41, 66))
+}
+
+ad[, `:=`(
+    sbo_scrcr_fu_cat_m = cat_followup(sbo_scrcr_fu_m),
+    sbo_fu_cat_m = cat_followup(sbo_fu_m),
+    sbo_surgery_fu_cat_m1 = cat_followup(sbo_surgery_fu_m1),
+    sbo_surgery_fu_cat_m2 = cat_followup(sbo_surgery_fu_m2),
+    sbo_surgery_scrcr_fy_cat_m = cat_followup(sbo_surgery_scrcr_fu_m)
+)]
+
 ```
 
 # Results
 
 ## Table 1
 
-A lot of table1 will only be available for the exposed population. Should probably seperate them into two tables.
+A lot of table1 will only be available for the exposed population. 
+These should probably be seperated into two tables, one containing just the exposed presenting scrcr variables and a second one
+also containing comparators presenting variables available for all.
 
 ```{r table 1}
 
@@ -186,12 +196,16 @@ table1_fun <- function(data, group = "") {
     return(tabl)
 }
 
-table1_fun(ad, group = "case")
 ```
+
 
 ```{r table1 run}
+# Colon resection open etc. Dont know how to define. And should they really be in a table1?
+tab1_pop <- table1_fun(ad, group = "case")
 
+table_dt(tab1_pop, caption = "table 1", title_row_names = FALSE)
 ```
+
 
 ## Validation
 
@@ -202,124 +216,147 @@ For exposed only.
 - The inpatient register is the gold standard.
 - PPV as well (true positive/true positive + false positive)
 
-### Validation of SBO
+### Validation of SBO (table2)
+
+For exposed only
 
 ```{r validation sbo}
 
 # Sensitivity,
 sensitivity <- function(test, gold) {
-    true_positives <- sum(truethy(test & gold))
-    all_positives <- sum(truethy(test | gold))
-    scales::percent(true_positives / all_positives)
+    true_positives <- sum(truethy(test == TRUE & gold == TRUE))
+    all_positives <- sum(truethy(gold == TRUE))
+    estimate <- scales::percent(true_positives / all_positives)
+    glue("{true_positives}/{all_positives} ({estimate})")
 }
 
 ppv <- function(test, gold) {
-    true_positives <- sum(truethy(test & gold))
-    false_negatives <- sum(truethy(test == FALSE & gold == TRUE))
-    scales::percent(true_positives / (true_positives + false_negatives))
+    true_positives <- sum(truethy(test == TRUE & gold == TRUE))
+    false_positives <- sum(truethy(test == TRUE & gold == FALSE))
+    estimate <- scales::percent(true_positives / (true_positives + false_positives))
+    glue("{true_positives}/{false_positives} ({estimate})")
 }
 
-ad[, .(
+ad[case == "exposed", .(
+    n = .N,
     n_sbo_scrcr = n_per(sbo_scrcr),
     n_sbo_patreg = n_per(sbo_patreg),
     sensitivty = sensitivity(sbo_scrcr, sbo_patreg),
     ppv = ppv(sbo_scrcr, sbo_patreg)
-)]
+), by = "sbo_fu_cat_m"] %>%
+    arrange(sbo_fu_cat_m) %>%
+    table_dt(caption = "Sensitivity and PPV for SBO in SCRCR compared to patreg")
 ```
 
-### Validation of SBO surgery
+_Conclusion_: Sensitivity of SBO in scrcr is low (when patreg is the gold standard)  
+
+### Validation of SBO surgery (Table 2)
+
+_correspondence?_
+For exposed only.
 
 ```{r validation sbo surgery}
-ad[, .(
+
+# Definition 1
+ad[case == "exposed", .(
+    n = .N,
     n_sbo_sugery_scrcr = n_per(sbo_surgery_scrcr),
     n_sbo_surgery_patreg1 = n_per(sbo_surgery_patreg1),
-    n_sbo_surgery_patreg2 = n_per(sbo_surgery_patreg2),
     sensitivty1 = sensitivity(sbo_surgery_scrcr, sbo_surgery_patreg1),
-    sensitivty2 = sensitivity(sbo_surgery_scrcr, sbo_surgery_patreg2),
-    ppv1 = ppv(sbo_surgery_scrcr, sbo_surgery_patreg1),
-    ppv2 = ppv(sbo_surgery_scrcr, sbo_surgery_patreg2)
-)]
+    ppv1 = ppv(sbo_surgery_scrcr, sbo_surgery_patreg1)
+), by = "sbo_surgery_fu_cat_m1"] %>%
+    arrange(sbo_surgery_fu_cat_m1) %>%
+    table_dt(caption = "Sensitivity and PPV for SBO surgery in SCRCR compared to inpatient algorithm1")
+
+# Definition 2
+ad[case == "exposed",
+    .(
+        n = .N,
+        n_sbo_surgery_scrcr = n_per(sbo_surgery_scrcr),
+        n_sbo_surgery_patreg2 = n_per(sbo_surgery_patreg2),
+        sensitivty2 = sensitivity(sbo_surgery_scrcr, sbo_surgery_patreg2),
+        ppv2 = ppv(sbo_surgery_scrcr, sbo_surgery_patreg2)
+    ),
+    by = "sbo_surgery_fu_cat_m2"
+] %>%
+    arrange(sbo_surgery_fu_cat_m2) %>%
+    table_dt(caption = "Sensitivity and PPV for SBO surgery in SCRCR compared to inpatient algorithm2")
 ```
 
-## Incidence of SBO
+_Conclusion_: 
 
-- Crude incidence of SBO for the two groups. Also stratified by timing (4 groups)
+- PPV is 100% for algorithm2 (no false negatives in the SCRCR, they are all found in patreg too). SCRCR does not really add anything.
+- Have these definition from patreg been validated elsewhere?
+
+## Kapplan Meier
+
+```{r kapplan meier}
+kapplan_meier <- function(data, event_var, fu_var) {
+
+    # Event, 0=alive, 1=event
+    event_var <- enquo(event_var)
+    fu_var <- enquo(fu_var)
+
+    # Instead of renaming the columns
+    data <- data %>% mutate(event = truethy(!!event_var), fu = !!fu_var)
+
+    # the model (set comparators as ref)
+    data$case <- relevel(data$case, ref = "comparators")
+    fit <- survival::survfit(survival::Surv(fu, event == TRUE) ~ case, data = data)
+
+    p <- survminer::ggsurvplot(
+        fit,
+        data = data,
+        size = 1, # change line size
+        censor = FALSE,
+        palette =
+            c("#c49f0f", "#0869a1"), # custom color palettes
+        conf.int = FALSE, # Add confidence interval
+        pval = FALSE, # Add p-value
+        legend.labs = c("Comparators", "Exposed"), # Change legend labels
+        risk.table.height = 0.25, # Useful to change when you have multiple groups
+        xlab = "Follow up time (months)",
+        risk.table = TRUE, # Add risk table
+        risk.table.col = "black",
+        risk.table.y.text = FALSE,
+        risk.table.y.text.col = FALSE,
+        ggtheme = theme_bw()
+    ) + ggplot2::ggtitle(as_label(event_var))
+
+    return(p)
+}
+
+kapplan_meier(ad, sbo_patreg, sbo_fu_m)
+kapplan_meier(ad, sbo_surgery_patreg1, sbo_surgery_fu_m1)
+kapplan_meier(ad, sbo_surgery_patreg2, sbo_surgery_fu_m2)
+```
+
+## Incidence and HR of SBO
+
+- Crude incidence of SBO for the two groups. 
+- Unadjuster HR 
 - Should there be any adjustment done?
-- Only for Patient register
+- Only for Patient register 
+- There are a lot of strata for this table (table 3 in the analysis plan). Should they really all be assessed?
 
 ```{r incidence of sbo}
-inc_sbo <- ad[, .(
-    n = sum(truethy(sbo_patreg)),
-    personyears = sum(sbo_fu_m) * 12,
-    crude_incidence = roundn(sum(truethy(sbo_patreg)) / sum(sbo_fu_m * 12) * 1000)
-), by = "case"]
-
-inc_sbo_surgery1 <- ad[, .(
-    n = sum(truethy(sbo_surgery_patreg1)),
-    personyears = sum(sbo_surgery_fu_m1) * 12,
-    crude_incidence = roundn(sum(truethy(sbo_surgery_patreg1)) / sum(sbo_surgery_fu_m1 * 12) * 1000)
-), by = "case"]
-
-inc_sbo_surgery2 <- ad[, .(
-    n = sum(truethy(sbo_surgery_patreg1)),
-    personyears = sum(sbo_surgery_fu_m1) * 12,
-    crude_incidence = roundn(sum(truethy(sbo_surgery_patreg2)) / sum(sbo_surgery_fu_m2 * 12) * 1000)
-), by = "case"]
-
-# test
-# inc_sbo <- rbindlist(list(
-# inc_sbo, data.table(case = "unexposed", n_sbo = 50,
-# personyears = 1000, crude_incidence = 1)))
 
 incidence_exact <- function(n, pt, dig = 1) {
     inc_table <- epitools::pois.exact(n, pt)
     x_ci(inc_table$rate, inc_table$lower, inc_table$upper, dig = dig)
 }
 
-incidence_row <- function(incidence_outcome, row_name) {
-    incidence_outcome[, rate_ci := incidence_exact(n, personyears / 1000)]
-    incidence_outcome[, personyears := round(personyears, 0)]
-
-    exp <- incidence_outcome[case == "exposed"]
-    unexp <- incidence_outcome[case == "unexposed"]
-    colnames(exp) <- paste0(colnames(exp), "_exp")
-    colnames(unexp) <- paste0(colnames(unexp), "_unexp")
-
-    inc_tab <- bind_cols(exp, unexp) %>%
-        select(-contains("case")) %>%
-        tibble::add_column(outcome = row_name, .before = 1)
-
-    return(inc_tab)
-}
-
-bind_rows(
-    incidence_row(inc_sbo, "sbo"),
-    incidence_row(inc_sbo_surgery1, "sbo_surgery1"),
-    incidence_row(inc_sbo_surgery2, "sbo_surgery2")
-) %>%
-    table_dt(caption = "Crude incidence of SBO and SBO surgery in exposed and unexposed")
-```
-
-- Incidence per 1000 person years.
-- Incidence CI estimated using the exact method.
-
-## Relative risk of SBO and SBO Surgery
-
-The risk of sbo in exposed relative to unexposed.
-
-```{r hazard ratio of sbo and sbo surgery, eval=FALSE}
 get_hr_ci <- function(data, event_var, fu_var) {
+
     # Event, 0=alive, 1=event
-    colnames(data)[colnames(data) == event_var] <- "event"
-    colnames(data)[colnames(data) == fu_var] <- "fu"
-    if (!"event" %in% colnames(data)) {
-        stop("Cannot find 'event' variable in data")
-    }
-    if (!"fu" %in% colnames(data)) {
-        stop("Cannot find 'fu' variable in data")
-    }
-    data$event <- truethy(data$event)
-    # the model
+    event_var <- enquo(event_var)
+    fu_var <- enquo(fu_var)
+
+    # Instead of renaming the columns
+    data <- data %>% mutate(event = truethy(!!event_var), fu = !!fu_var)
+
+    # the model (set comparators as ref)
+    data$case <- relevel(data$case, ref = "comparators")
     cox_model <- survival::coxph(survival::Surv(fu, event == TRUE) ~ case, data = data)
     # print(summary(cox_model))
 
@@ -330,14 +367,59 @@ get_hr_ci <- function(data, event_var, fu_var) {
     return(hr_ci)
 }
 
-get_hr_ci(ad, "sbo_patreg", "sbo_fu_m")
-get_hr_ci(ad, "sbo_surgery_patreg1", "sbo_surgery_fu_m1")
-get_hr_ci(ad, "sbo_surgery_patreg2", "sbo_surgery_fu_m2")
+
+inc_hr_row <- function(x, outcome_in, persontime_in, strata = "", hr = TRUE) {
+    outcome <- enquo(outcome_in)
+    persontime <- enquo(persontime_in)
+
+    if (strata != "") {
+        warning("TODO: handle strata")
+    }
+
+    incidence_tab <- x %>%
+        group_by(case) %>%
+        summarise(
+            n = sum(truethy(!!outcome)),
+            pyk = round(sum(!!persontime) / 12 / 1000, 3),
+            # crude_inc = n / pyk,
+            ci_exact = incidence_exact(n, pyk)
+        )
+
+    setDT(incidence_tab)
+    exp <- incidence_tab[case == "exposed"]
+    unexp <- incidence_tab[case == "comparators"]
+    colnames(exp) <- paste0(colnames(exp), "_exp")
+    colnames(unexp) <- paste0(colnames(unexp), "_comp")
+
+    inc_r <- bind_cols(exp, unexp) %>%
+        select(-contains("case")) %>%
+        tibble::add_column(outcome = as_label(outcome), .before = 1) %>%
+        tibble::add_column(strata = strata, .before = 1)
+
+    if (hr) {
+        inc_r$hr <- get_hr_ci(x, !!outcome, !!persontime)
+    }
+
+    return(inc_r)
+}
+
+
+bind_rows(
+    inc_hr_row(ad, sbo_patreg, sbo_fu_m),
+    inc_hr_row(ad, sbo_surgery_patreg1, sbo_surgery_fu_m1),
+    inc_hr_row(ad, sbo_surgery_patreg2, sbo_surgery_fu_m2)
+) %>%
+    table_dt(caption = "Crude incidence of SBO and SBO surgery in exposed and unexposed")
 ```
+
+- Incidence per 1000 person years.
+- Incidence CI estimated using the exact method (ref).
 
 ## Cumulative Incidence function
 
 Competing risk = 'death'
+
+Cumulative incidence should be assessed at 
 
 ```{r cif}
 # Competing risk of death taken into account.

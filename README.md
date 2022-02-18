@@ -26,8 +26,9 @@
 19. _DONE_ create new fake data
 20. _DONE_ Change all infiles in 2_create_analysisdata.rdm
 21. _DONE_ run_create_analysisdata()
-22. Crete new strata definitions in results according to tables in analysisplan
-23. Create results
+22. Cencor comparators that become exposed (create_analysisdata())
+23. Crete new strata definitions in results according to tables in analysisplan (done in results.rmd)
+24. _Ongoing_ Create results
 
 # Questions
 
