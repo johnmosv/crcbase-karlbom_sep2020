@@ -349,6 +349,8 @@ All variables are assessed as prevalent at baseline
  - Colorectal cancer surgery type (a2_optyp2=01-09 [surgery_type has been derived] from SCRCR)
  - Year of surgery (`proceduredate`)
 
+ 
+
 ```{r baseline scrcr, include=TRUE}
 
 # BMI - already in data, make categories
@@ -522,56 +524,43 @@ pop[, age_cat := case_when(
 ```
 
 
-#### Occurs after exposure
-_Not assessed_
+#### Postoperation variables
+Occurs after exposure.
+Used in __Postoperation table__
+All variables prefixed wih `postop_`
 
 - Re-operation (a4_reop from SCRCR)
 - Fascial dehiscence (a4_reoprup from SCRCR)
 - Anastomotic leak (a4_anakomp from SCRCR)
 
+```{r postoperation variables}
+pop[, `:=`(
+    postop_reoperation = truethy(reoperation), # derived from a4_reop
+    postop_fascial = truethy(a4_reoprup),
+    postop_al = truethy(a4_anakomp)
+)]
+```
 
-### Other SBO mechanisms
+- abdominal hernia
 
-#### a. Hernia
-Incarcerated abdominal hernia (dia1-dia30= K40.0, K40.3, K41.0, K41.3, K42.0, K43.0, K43.3, K43.6, K44.0, K45.0, K46.0 as primary or secondary codes in the IPR) _at the same visit as SBO_
+Incarcerated abdominal hernia (dia1-dia30= K40.0, K40.3, K41.0, K41.3, K42.0, K43.0, K43.3, K43.6, K44.0, K45.0, K46.0 as primary or secondary codes in the IPR)
 
 ```{r hernia}
 
 hernia <- abd_hernia_raw[abhernia == 1 & index_date < indate]
 hernia_first <- hernia[,
-    .(hernia_at_sbo = any(abhernia), hernia_date = min(indate)),
+    .(postop_hernia = any(abhernia == 1), hernia_date = min(indate)),
     by = c("lopnr", "index_date")
 ]
 
 # First hernia date after index date. But this is not the same time as sbo
 hernia_first$hernia_date %>% qplot()
 
-# Add to population TODO if it should be assessed this way
-# pop <- left_merge(pop, hernia_first[, .(lopnr, index_date, hernia_at_sbo)], id_vars = c("lopnr", "index_date"))
+# Add to population
+pop <- left_merge(pop, hernia_first[, .(lopnr, index_date, postop_hernia)], id_vars = c("lopnr", "index_date"))
 
 # proportioni with hernia before index date
-# n_per(pop$hernia_at_sbo)
-```
-
-
-#### b. Stoma closures
- _Moved it to here instead of on its own so assessed at SBO just like hernia, ie at the same visit as SBO. Should it be assessed at baseline? Between exposure and outcome? is it an outcome, a secondary outcome??_
-
-Any procedure code (op=JFG00, JFG10, JFG20, JFG23, JFG29, JFG26,JFG30, JFG33, JFG36 in the IPR)
-
-```{r stoma closures}
-# Codes used
-
-definitions$procedure_codes$stoma_closure
-
-# Before and after index_date
-stoma_closures <- surgeries_raw[code %in% definitions$procedure_codes[["stoma_closure"]], .(
-    lopnr, index_date, indate, code
-)]
-
-tabyl(stoma_closures, code)
-
-# TODO : dont know when to assess stoma closure.
+n_per(pop$postop_hernia)
 ```
 
 
