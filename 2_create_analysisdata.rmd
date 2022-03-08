@@ -336,7 +336,6 @@ if (any(relapse_before_index)) {
 ### Baseline characteristics
 
 #### SCRCR only
-_called exposure variables in the analysis plan_
 All variables are assessed as prevalent at baseline
  - Body mass index (BMI) (weight/height2  from CRC-base, kg/m2)
  - Neoadjuvant radiotherapy (neoadj_rt=1 from CRC-base)
@@ -513,6 +512,7 @@ colnames(cci) <- str_to_lower(colnames(cci))
 cci_max <- cci[, .(cci_weighted = max(cci_weighted)), by = c("lopnr", "diagdate_scrcr")]
 
 pop <- left_merge(pop, cci_max, by = c("lopnr", "diagdate_scrcr"))
+pop[is.na(cci_weighted), cci_weighted := 0]
 ```
 
 ```{r age cat}
@@ -811,7 +811,53 @@ __Done for__:
 # )]
 ```
 
-## Export analysisdata
+## Model variables
+Additional variables used on SCRCR population only.
+Outcome will be SBO for all
+Data only available for SCRCR population
+
+- exposure1 : method (a2_lapa)
+- exposure2 : adjuvant_radiation (neoadj_rt)
+- confounders
+    - pT (1-3/4) `pt_group`
+    - previous abdominal surgery `bs_prev_abd_surgeries`
+    - tumour_level (a2_rscop [0-5, 6-10, 11-15])
+
+```{r model variables}
+# exposure1 method
+pop[, method := case_when(
+    a2_lapa == 1 ~ "lapa",
+    TRUE ~ "open"
+)]
+tabyl(pop, method)
+
+# exposure2 neoadj_rt
+pop[, exp_neoadj_rt := truethy(neoadj_rt)]
+tabyl(pop$exp_neoadj_rt)
+
+# pT
+pop[, pt_group := case_when(
+    pt_cat %in% 2:4 ~ "1-3",
+    pt_cat == 5 ~ "4",
+    TRUE ~ "X or 0"
+)]
+
+# previous abdominal surgery (yes/no)
+pop$bs_previous_abd_surgery <- truethy(pop$bs_previous_abd_surgery)
+tabyl(pop$bs_previous_abd_surgery)
+
+# Tumour level
+pop[, tumour_level := case_when(
+    a2_rscop %in% 0:5 ~ "0-5",
+    a2_rscop %in% 6:10 ~ "6-10",
+    a2_rscop %in% 11:15 ~ "11-15",
+    TRUE ~ NA_character_
+)]
+tabyl(pop$tumour_level)
+```
+
+
+4. # Export analysisdata
 
 ```{r export}
 print(glue("Writing analysisdata with : {nrow(pop)} rows and {ncol(pop)} columns to: project derived folder"))
