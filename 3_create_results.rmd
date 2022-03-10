@@ -25,11 +25,13 @@ library(ggplot2)
 library(lubridate)
 library(rlang)
 library(epitools) # CI for rate using exact method
-library(cmprsk) # CIF and competing risk
+library(cmprsk) # CIF and competing risk, crr(), timepoints(), cuminc()
 
 source("crcbase_utils/helpers.R")
 source("crcbase_utils/crud/setup_project_crud.R")
 source("crcbase_utils/crud/read_from_variable_lists.R")
+source("crcbase_utils/process/process_scrcr.R")
+source("crcbase_utils/process/analysis.R")
 test_for_k()
 
 knitr::opts_chunk$set(
@@ -61,6 +63,8 @@ ad_raw <- read_from_project_derived("analysisdata.csv")
 # Remove unwanted columns
 ad <- select_analysis_data(ad_raw)
 # paste0(colnames(ad), collapse = " | ")
+
+ad$tumour_location <- define_tumour_location(ad$location)
 ```
 
 ### Create factors
@@ -79,8 +83,6 @@ Should move to `2_crate_analysisdata`
 # Age at proceduredate. Cannot find birthdate
 
 # Categorize follow up time
-
-
 cat_followup <- function(x) {
     cat_numeric(x, cutoffs = c(6, 18, 41, 66))
 }
@@ -97,17 +99,14 @@ ad[, `:=`(
 
 # Results
 
-## Table 1
+## Table 1 : Baseline characteristics for the whole population
 
-A lot of table1 will only be available for the exposed population. 
 These should probably be seperated into two tables, one containing just the exposed presenting scrcr variables and a second one
 also containing comparators presenting variables available for all.
 
 ```{r table 1}
 
 table1_fun <- function(data, group = "") {
-    setDT(data)
-
     tabl <- data[,
         .(
             n = .N,
@@ -120,67 +119,14 @@ table1_fun <- function(data, group = "") {
             cci_o2 = n_per(cci_weighted > 2),
             cci_weighted_mean = mean_sd(cci_weighted),
             cci_weighted_median = median_iqr(cci_weighted),
-            bmi_under_25 = n_per(bmi_cat == "<25"),
-            bmi_25_30 = n_per(bmi_cat == "25-30"),
-            bmi_over_30 = n_per(bmi_cat == ">=30"),
-            bmi_na = n_per(is_na(bmi_cat)),
             education_u9 = n_per(education_cat == "<9"),
             education_9_to_12 = n_per(education_cat == "9-12"),
             education_o12 = n_per(education_cat == ">12"),
             previous_abdominal_surgery = n_per(bs_previous_abd_surgery),
-            neoadj_radiotherapy = n_per(bs_neoadj_radio),
-            method = "which variable?",
-            procedure = "surgery_type",
-            st_il_res = n_per(surgery_type == 1),
-            st_right_hem = n_per(surgery_type == 2),
-            st_trans_res = n_per(surgery_type == 3),
-            st_left_hem = n_per(surgery_type == 4),
-            st_sigmoid_res = n_per(surgery_type == 5),
-            st_total = n_per(surgery_type == 6),
-            st_lower_ar = n_per(surgery_type == 7),
-            st_rectum_amp = n_per(surgery_type == 8),
-            st_hart = n_per(surgery_type == 9),
-            st_tem = n_per(surgery_type == 10),
-            st_local_ex = n_per(surgery_type == 11),
-            st_laparatomi = n_per(surgery_type == 12),
-            st_other = n_per(surgery_type == 13),
-            st_appendectomy = n_per(surgery_type == 14),
-            stoma_resection = n_per(bs_stoma_resection),
-            perop_bleed_u150 = n_per(bs_perop_bleed < 150),
-            perop_bleed_150_300 = n_per(bs_perop_bleed >= 150 & bs_perop_bleed < 300),
-            perop_bleed_o300 = n_per(bs_perop_bleed > 300),
-            perop_bleed_na = n_per(is.na(bs_perop_bleed)),
-            perop_bleed_median = median_iqr(bs_perop_bleed),
-            perop_bleed_mean = mean_sd(bs_perop_bleed),
-            reoperation = "after index",
-            fascial_dehiscence = "after index",
-            al = "after index",
-            stage_0 = n_per(stage == 0),
-            stage_1 = n_per(stage == 1),
-            stage_2 = n_per(stage == 2),
-            stage_3 = n_per(stage == 3),
-            stage_4 = n_per(stage == 4),
-            stage_missing = n_per(is.na(stage)),
-            pt_cat1 = n_per(bs_path_t_stage_cat == 1), # 0-3 and 4 is wanted. But contains 1-6
-            pt_cat2 = n_per(bs_path_t_stage_cat == 2),
-            pt_cat3 = n_per(bs_path_t_stage_cat == 3),
-            pt_cat4 = n_per(bs_path_t_stage_cat == 4),
-            pt_cat5 = n_per(bs_path_t_stage_cat == 5),
-            pt_cat6 = n_per(bs_path_t_stage_cat == 6),
-            adjuvant_chemo = n_per(adj_ct),
-            indexyear_2007_2010 = n_per(index_year %in% 2007:2010),
-            indexyear_2011_2012 = n_per(index_year %in% 2011:2012),
+            indexyear_2007_2009 = n_per(index_year %in% 2007:2009),
+            indexyear_2010_2012 = n_per(index_year %in% 2010:2012),
             indexyear_2013_2016 = n_per(index_year %in% 2013:2016),
             other_baseline_char = "",
-            minimal_invasive_surgery = n_per(bs_minimal_invasive_surgery),
-            convert_to_open = n_per(bs_convert_to_open),
-            tumour_location_left_colon = n_per(bs_location_of_tumour == "left"),
-            tumour_location_right_colon = n_per(bs_location_of_tumour == "right"),
-            tumour_location_rektum = n_per(bs_location_of_tumour == "rektum"),
-            tumour_location_undefined = n_per(bs_location_of_tumour == ""), # 9 = undefined
-            anastomotic_site_ilecolic = n_per(bs_surgery_type %in% 1:2),
-            anastomotic_site_colocolic = n_per(bs_surgery_type %in% 3:5),
-            anastomotic_site_coloilorec = n_per(bs_surgery_type %in% 6:7),
             previous_sbo_3m_bf_diagdate = n_per(bs_previous_sbo_3m_before_diagdate),
             previous_abpain_3m_bf_diagdate = n_per(bs_previous_abpain_3m_before_diagdate),
             indexyear_median = median_iqr(index_year),
@@ -196,16 +142,92 @@ table1_fun <- function(data, group = "") {
     return(tabl)
 }
 
-```
-
-
-```{r table1 run}
-# Colon resection open etc. Dont know how to define. And should they really be in a table1?
 tab1_pop <- table1_fun(ad, group = "case")
 
 table_dt(tab1_pop, caption = "table 1", title_row_names = FALSE)
 ```
 
+
+
+## Table 2 : Baseline characteristics for SCRCR population
+
+Event occurring between exposure and outcome. Only relevant for the scrcr population
+
+```{r table 2 postop table}
+table2_fun <- function(data, group = "") {
+    tab_res <- data[, .(
+        n = .N,
+        bmi_under_25 = n_per(bmi_cat == "<25"),
+        bmi_25_30 = n_per(bmi_cat == "25-30"),
+        bmi_over_30 = n_per(bmi_cat == ">=30"),
+        bmi_na = n_per(is_na(bmi_cat)),
+        neoadj_radiotherapy = n_per(bs_neoadj_radio),
+        method_lapa = n_per(method == "lapa"),
+        procedure = "surgery_type",
+        st_il_res = n_per(surgery_type == 1),
+        st_right_hem = n_per(surgery_type == 2),
+        st_trans_res = n_per(surgery_type == 3),
+        st_left_hem = n_per(surgery_type == 4),
+        st_sigmoid_res = n_per(surgery_type == 5),
+        st_total = n_per(surgery_type == 6),
+        st_lower_ar = n_per(surgery_type == 7),
+        st_rectum_amp = n_per(surgery_type == 8),
+        st_hart = n_per(surgery_type == 9),
+        st_tem = n_per(surgery_type == 10),
+        st_local_ex = n_per(surgery_type == 11),
+        st_laparatomi = n_per(surgery_type == 12),
+        st_other = n_per(surgery_type == 13),
+        st_appendectomy = n_per(surgery_type == 14),
+        stoma_resection = n_per(bs_stoma_resection),
+        perop_bleed_u150 = n_per(bs_perop_bleed < 150),
+        perop_bleed_150_300 = n_per(bs_perop_bleed >= 150 & bs_perop_bleed < 300),
+        perop_bleed_o300 = n_per(bs_perop_bleed > 300),
+        perop_bleed_na = n_per(is.na(bs_perop_bleed)),
+        perop_bleed_median = median_iqr(bs_perop_bleed),
+        perop_bleed_mean = mean_sd(bs_perop_bleed),
+        stage_0 = n_per(stage == 0),
+        stage_1 = n_per(stage == 1),
+        stage_2 = n_per(stage == 2),
+        stage_3 = n_per(stage == 3),
+        stage_4 = n_per(stage == 4),
+        stage_missing = n_per(is.na(stage)),
+        pt_cat1_3 = n_per(bs_path_t_stage_cat %in% 2:4), # 0-3 and 4 is wanted. But contains 1-6
+        pt_cat4 = n_per(bs_path_t_stage_cat == 5),
+        pt_cat0 = n_per(bs_path_t_stage_cat == 0),
+        pt_catx = n_per(bs_path_t_stage_cat == 6),
+        adjuvant_chemo = n_per(adj_ct),
+        minimal_invasive_surgery = n_per(bs_minimal_invasive_surgery),
+        convert_to_open = n_per(bs_convert_to_open),
+        tumour_location_left_colon = n_per(bs_location_of_tumour == "left"),
+        tumour_location_right_colon = n_per(bs_location_of_tumour == "right"),
+        tumour_location_rektum = n_per(bs_location_of_tumour == "rektum"),
+        tumour_location_undefined = n_per(bs_location_of_tumour == ""), # 9 = undefined
+        anastomotic_site_ilecolic = n_per(bs_surgery_type %in% 1:2),
+        anastomotic_site_colocolic = n_per(bs_surgery_type %in% 3:5),
+        anastomotic_site_coloilorec = n_per(bs_surgery_type %in% 6:7)
+    ), by = group]
+
+    tab_res <- transpose_dt(tab_res)
+
+    return(tab_res)
+}
+
+table2_fun(ad[case == "exposed"], group = "tumour_location")
+```
+
+## Table 3: Postoperation variables
+
+For scrcr population only
+
+```{r postoperationtable}
+ad[case == "exposed", .(
+    n = .N,
+    reoperation = n_per(postop_reoperation),
+    fascial_del = n_per(postop_fascial),
+    al = n_per(postop_al),
+    abdominal_hernia = n_per(truethy(postop_hernia))
+), by = "col_location"]
+```
 
 ## Validation
 
@@ -218,7 +240,7 @@ For exposed only.
 
 ### Validation of SBO (table2)
 
-For exposed only
+For exposed only. Validation of sbo and sbo surgery in scrcr with IPR as the gold standard.
 
 ```{r validation sbo}
 
@@ -288,140 +310,176 @@ _Conclusion_:
 - PPV is 100% for algorithm2 (no false negatives in the SCRCR, they are all found in patreg too). SCRCR does not really add anything.
 - Have these definition from patreg been validated elsewhere?
 
-## Kapplan Meier
+## Part 1: colorectal cancer as the exposure
+
+### Kapplan Meier
 
 ```{r kapplan meier}
-kapplan_meier <- function(data, event_var, fu_var) {
-
-    # Event, 0=alive, 1=event
-    event_var <- enquo(event_var)
-    fu_var <- enquo(fu_var)
-
-    # Instead of renaming the columns
-    data <- data %>% mutate(event = truethy(!!event_var), fu = !!fu_var)
-
-    # the model (set comparators as ref)
-    data$case <- relevel(data$case, ref = "comparators")
-    fit <- survival::survfit(survival::Surv(fu, event == TRUE) ~ case, data = data)
-
-    p <- survminer::ggsurvplot(
-        fit,
-        data = data,
-        size = 1, # change line size
-        censor = FALSE,
-        palette =
-            c("#c49f0f", "#0869a1"), # custom color palettes
-        conf.int = FALSE, # Add confidence interval
-        pval = FALSE, # Add p-value
-        legend.labs = c("Comparators", "Exposed"), # Change legend labels
-        risk.table.height = 0.25, # Useful to change when you have multiple groups
-        xlab = "Follow up time (months)",
-        risk.table = TRUE, # Add risk table
-        risk.table.col = "black",
-        risk.table.y.text = FALSE,
-        risk.table.y.text.col = FALSE,
-        ggtheme = theme_bw()
-    ) + ggplot2::ggtitle(as_label(event_var))
-
-    return(p)
-}
-
 kapplan_meier(ad, sbo_patreg, sbo_fu_m)
-kapplan_meier(ad, sbo_surgery_patreg1, sbo_surgery_fu_m1)
 kapplan_meier(ad, sbo_surgery_patreg2, sbo_surgery_fu_m2)
 ```
 
-## Incidence and HR of SBO
+### Incidence and HR of SBO
 
 - Crude incidence of SBO for the two groups. 
-- Unadjuster HR 
-- Should there be any adjustment done?
-- Only for Patient register 
-- There are a lot of strata for this table (table 3 in the analysis plan). Should they really all be assessed?
+- unadjusted HRs
 
 ```{r incidence of sbo}
-
-incidence_exact <- function(n, pt, dig = 1) {
-    inc_table <- epitools::pois.exact(n, pt)
-    x_ci(inc_table$rate, inc_table$lower, inc_table$upper, dig = dig)
-}
-
-get_hr_ci <- function(data, event_var, fu_var) {
-
-    # Event, 0=alive, 1=event
-    event_var <- enquo(event_var)
-    fu_var <- enquo(fu_var)
-
-    # Instead of renaming the columns
-    data <- data %>% mutate(event = truethy(!!event_var), fu = !!fu_var)
-
-    # the model (set comparators as ref)
-    data$case <- relevel(data$case, ref = "comparators")
-    cox_model <- survival::coxph(survival::Surv(fu, event == TRUE) ~ case, data = data)
-    # print(summary(cox_model))
-
-    # Only return hr (ci)
-    tidy_res <- broom::tidy(cox_model, exponentiate = TRUE, conf.int = TRUE)
-    hr_ci <- x_ci(tidy_res$estimate, tidy_res$conf.low, tidy_res$conf.high)
-
-    return(hr_ci)
-}
-
-
-inc_hr_row <- function(x, outcome_in, persontime_in, strata = "", hr = TRUE) {
-    outcome <- enquo(outcome_in)
-    persontime <- enquo(persontime_in)
-
-    if (strata != "") {
-        warning("TODO: handle strata")
-    }
-
-    incidence_tab <- x %>%
-        group_by(case) %>%
-        summarise(
-            n = sum(truethy(!!outcome)),
-            pyk = round(sum(!!persontime) / 12 / 1000, 3),
-            # crude_inc = n / pyk,
-            ci_exact = incidence_exact(n, pyk)
-        )
-
-    setDT(incidence_tab)
-    exp <- incidence_tab[case == "exposed"]
-    unexp <- incidence_tab[case == "comparators"]
-    colnames(exp) <- paste0(colnames(exp), "_exp")
-    colnames(unexp) <- paste0(colnames(unexp), "_comp")
-
-    inc_r <- bind_cols(exp, unexp) %>%
-        select(-contains("case")) %>%
-        tibble::add_column(outcome = as_label(outcome), .before = 1) %>%
-        tibble::add_column(strata = strata, .before = 1)
-
-    if (hr) {
-        inc_r$hr <- get_hr_ci(x, !!outcome, !!persontime)
-    }
-
-    return(inc_r)
-}
-
-
+confounders_base <- c("diagage", "female", "index_year")
 bind_rows(
-    inc_hr_row(ad, sbo_patreg, sbo_fu_m),
-    inc_hr_row(ad, sbo_surgery_patreg1, sbo_surgery_fu_m1),
-    inc_hr_row(ad, sbo_surgery_patreg2, sbo_surgery_fu_m2)
+    inc_hr_row(ad, sbo_patreg, sbo_fu_m,
+        exposure = case,
+        ref = "comparators" # , confounders = confounders_base
+    ),
+    inc_hr_row(ad, sbo_surgery_patreg2, sbo_surgery_fu_m2,
+        exposure = case, ref = "comparators" # , confounders = confounders_base
+    )
 ) %>%
-    table_dt(caption = "Crude incidence of SBO and SBO surgery in exposed and unexposed")
+    table_dt(caption = "Crude incidence rate and hazard ratio of SBO and SBO surgery in colorectal cancer patientes (exposed) and general population comparators (unexposed)")
 ```
 
 - Incidence per 1000 person years.
 - Incidence CI estimated using the exact method (ref).
 
-## Cumulative Incidence function
+### Cumulative Incidence function (CIF)
 
 Competing risk = 'death'
 
-Cumulative incidence should be assessed at 
+Cumulative incidence is estimated at 18, 44, 66 months
 
-```{r cif}
+```{r cif status}
 # Competing risk of death taken into account.
 # Fine and Gray (cmprsk)
+
+# code status according to 1 = sbo, 2 = alive/cencored, 3 = dead (competing event)
+
+# ad %>% select(lopnr, case, end_of_study, deathdate, migrationdate, sbo_patreg_date,
+# relapse_date, sbo_surgery_patreg_date2, sbo_eof, sbo_surgery_eof2)
+
+
+ad[, status_sbo := case_when(
+    sbo_eof == sbo_patreg_date ~ 1,
+    sbo_eof == deathdate ~ 2, # competing event
+    TRUE ~ 0 # cencored (emmigration, end of study, relapse)
+)]
+
+
+ad[, status_sbo_surgery := case_when(
+    sbo_surgery_eof2 == sbo_surgery_patreg_date2 ~ 1,
+    sbo_surgery_eof2 == deathdate ~ 2,
+    TRUE ~ 0 # cencored (emmigration, end of study, relapse)
+)]
+```
+
+
+```{r cif sbo}
+cif_sbo <- cuminc(
+    ftime = ad$sbo_fu_m,
+    fstatus = ad$status_sbo,
+    group = ad$case,
+    cencode = 0
+)
+
+# Create the cif table
+cif_table(cif_obj = cif_sbo, timepoints = c(18, 41, 66)) %>%
+    table_dt(caption = "Cumulative incidence of SBO in colorectal cancer patients (exposed) and general population comparators (unexposed)
+ under the competing risk of death")
+```
+
+```{r plot cif}
+
+survminer::ggcompetingrisks(cif_sbo, multiple_panels = F) +
+    ggtitle("") +
+    scale_linetype_manual(
+        name = "Cohort:",
+        values = c("dashed", "solid"),
+        labels = c("Comparators", "Exposes")
+    ) +
+    scale_color_manual(
+        name = "Event:",
+        values = c("black", "darkgray"),
+        labels = c("SBO", "Death")
+    ) +
+    scale_y_continuous(name = "Cumulaitve incidence (%)") +
+    scale_x_continuous(name = "Months", breaks = c(0, 18, 41, 66, 125)) +
+    theme(
+        legend.position = c(0.2, 0.8),
+        legend.title = element_text(face = "bold")
+    )
+```
+
+## Part 2: SCRCR population only
+
+Only for SCRCR population. 
+Two different exposures identified in SCRCR and the rest of the SCRCR population are included in the unexposed cohort.
+
+### Model 1 : Lapa
+
+- Study population: All colorectal cancer patientes in the study
+- Exposure : Lapa
+- Confounders: pT, BMI, earlier abdominal surgery, time period, sex, _age_
+
+```{r index_period}
+ad[, index_period := case_when(
+    index_year %in% 2007:2009 ~ "2007:2009",
+    index_year %in% 2010:2012 ~ "2010:2012",
+    index_year %in% 2013:2016 ~ "2013:2016",
+)]
+```
+
+```{r  model Lapa}
+confounders1 <- c("diagage", "female", "pt_group", "bmi_cat", "bs_previous_abd_surgery", "index_period")
+
+bind_rows(
+    inc_hr_row(
+        x = ad[case == "exposed"],
+        outcome_in = sbo_patreg,
+        persontime_in = sbo_fu_m,
+        exposure_var = method, ref = "open",
+        confounder = confounders1,
+        print_summary = TRUE
+    ),
+    inc_hr_row(
+        x = ad[case == "exposed"],
+        outcome_in = sbo_surgery_patreg2,
+        persontime_in = sbo_surgery_fu_m2,
+        exposure_var = method, ref = "open",
+        confounder = confounders1,
+        print_summary = TRUE
+    )
+) %>%
+    table_dt(caption = glue("Model 1: Lapa vs open, confounders={paste(confounders1, collapse = ', ')}"))
+```
+
+### Model 2 : Neoadjuvant radiotherapy
+- Study population: All rectal cancer patients in the study
+- Exposure: Neoadjuvant radio therapy
+- Confounders: pT (pT1-3 / pT4), time period, sew, age, tumour level
+
+```{r model2: neoadj_radiotherapy}
+
+# Tumour location, needed for stratification
+ad$tumour_location <- define_tumour_location(ad$location)
+
+confounders2 <- c("diagage", "female", "pt_group", "index_period", "tumour_level")
+
+bind_rows(
+    inc_hr_row(
+        x = ad[case == "exposed" & tumour_location == "rectum"],
+        outcome_in = sbo_patreg,
+        persontime_in = sbo_fu_m,
+        exposure_var = exp_neoadj_rt,
+        confounder = confounders2,
+        print_summary = TRUE
+    ),
+    inc_hr_row(
+        x = ad[case == "exposed"],
+        outcome_in = sbo_surgery_patreg2,
+        persontime_in = sbo_surgery_fu_m2,
+        exposure_var = exp_neoadj_rt,
+        confounder = confounders2,
+        print_summary = TRUE
+    )
+) %>%
+    table_dt(caption = glue("Model 2: Neoadj radiation therapy in rectal cancer patients, confounders={paste(confounders2, collapse = ', ')}"))
 ```

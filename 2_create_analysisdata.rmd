@@ -839,7 +839,7 @@ tabyl(pop$exp_neoadj_rt)
 pop[, pt_group := case_when(
     pt_cat %in% 2:4 ~ "1-3",
     pt_cat == 5 ~ "4",
-    TRUE ~ "X or 0"
+    TRUE ~ "missing"
 )]
 
 # previous abdominal surgery (yes/no)
@@ -854,6 +854,7 @@ pop[, tumour_level := case_when(
     TRUE ~ NA_character_
 )]
 tabyl(pop$tumour_level)
+
 ```
 
 
