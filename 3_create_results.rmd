@@ -76,8 +76,6 @@ tabyl(ad, case)
 
 ## Create variables
 
-Should move to `2_crate_analysisdata`
-
 ```{r}
 
 # Age at proceduredate. Cannot find birthdate
@@ -132,7 +130,7 @@ table1_fun <- function(data, group = "") {
             indexyear_median = median_iqr(index_year),
             # after index date
             relaspe = n_per(!is.na(relapse_date)),
-            death = n_per(!is.na(deathdate))
+            death_during_followup = n_per(!is.na(deathdate))
         ),
         by = group
     ]
@@ -212,7 +210,9 @@ table2_fun <- function(data, group = "") {
     return(tab_res)
 }
 
-table2_fun(ad[case == "exposed"], group = "tumour_location")
+
+table2_fun(ad[case == "exposed"], group = "tumour_location") %>%
+    table_dt(caption = "Baseline characteristics for the SCRCR population")
 ```
 
 ## Table 3: Postoperation variables
@@ -226,7 +226,9 @@ ad[case == "exposed", .(
     fascial_del = n_per(postop_fascial),
     al = n_per(postop_al),
     abdominal_hernia = n_per(truethy(postop_hernia))
-), by = "col_location"]
+), by = "tumour_location"] %>%
+    transpose_dt() %>%
+    table_dt(caption = "Postoperation variables - SCRCR population only")
 ```
 
 ## Validation
@@ -312,11 +314,33 @@ _Conclusion_:
 
 ## Part 1: colorectal cancer as the exposure
 
+### Proportional hazard assumption
+
+The proportional hazard assumption was tested taking the ineraction term of log of follow up and exposure
+
+```{r proportional hazard assumption}
+prop_fit <- survival::coxph(Surv(sbo_fu_m, sbo_patreg) ~ case + case:log(sbo_fu_m), data = ad)
+prop_fit %>% broom::tidy()
+
+# Confirm with cox.zph (if global or the exposure has a p <0.05, the ph assumption is not valid)
+global_fit <- survival::coxph(Surv(sbo_fu_m, sbo_patreg) ~ case, data = ad)
+survival::cox.zph(global_fit)
+```
+
+```{r ph assumption sbo_patreg}
+prop_fit <- survival::coxph(Surv(sbo_surgery_fu_m2, sbo_surgery_patreg2) ~ case + case:log(sbo_surgery_fu_m2), data = ad)
+prop_fit %>% broom::tidy()
+```
+- The interaction term between the exposure variable and the log of follow up are below <0.05
+- PH assumption does not hold for SBO nor SBO surgery
+
+
+
 ### Kapplan Meier
 
 ```{r kapplan meier}
-kapplan_meier(ad, sbo_patreg, sbo_fu_m)
-kapplan_meier(ad, sbo_surgery_patreg2, sbo_surgery_fu_m2)
+kapplan_meier(ad, sbo_patreg, sbo_fu_m, exp_var = case)
+kapplan_meier(ad, sbo_surgery_patreg2, sbo_surgery_fu_m2, exp_var = case)
 ```
 
 ### Incidence and HR of SBO
@@ -340,21 +364,15 @@ bind_rows(
 
 - Incidence per 1000 person years.
 - Incidence CI estimated using the exact method (ref).
-
 ### Cumulative Incidence function (CIF)
 
-Competing risk = 'death'
-
-Cumulative incidence is estimated at 18, 44, 66 months
+- Competing risk = 'death'
+- Cumulative incidence is estimated at 18, 44, 66 months
 
 ```{r cif status}
 # Competing risk of death taken into account.
 # Fine and Gray (cmprsk)
-
 # code status according to 1 = sbo, 2 = alive/cencored, 3 = dead (competing event)
-
-# ad %>% select(lopnr, case, end_of_study, deathdate, migrationdate, sbo_patreg_date,
-# relapse_date, sbo_surgery_patreg_date2, sbo_eof, sbo_surgery_eof2)
 
 
 ad[, status_sbo := case_when(
@@ -401,12 +419,13 @@ survminer::ggcompetingrisks(cif_sbo, multiple_panels = F) +
         labels = c("SBO", "Death")
     ) +
     scale_y_continuous(name = "Cumulaitve incidence (%)") +
-    scale_x_continuous(name = "Months", breaks = c(0, 18, 41, 66, 125)) +
+    scale_x_continuous(name = "Follow up time (months)", breaks = c(0, 18, 41, 66, 125)) +
     theme(
         legend.position = c(0.2, 0.8),
         legend.title = element_text(face = "bold")
     )
 ```
+
 
 ## Part 2: SCRCR population only
 
@@ -426,6 +445,7 @@ ad[, index_period := case_when(
     index_year %in% 2013:2016 ~ "2013:2016",
 )]
 ```
+
 
 ```{r  model Lapa}
 confounders1 <- c("diagage", "female", "pt_group", "bmi_cat", "bs_previous_abd_surgery", "index_period")
@@ -449,6 +469,11 @@ bind_rows(
     )
 ) %>%
     table_dt(caption = glue("Model 1: Lapa vs open, confounders={paste(confounders1, collapse = ', ')}"))
+```
+
+```{r model1 kapplan meier}
+kapplan_meier(ad[case == "exposed"], sbo_patreg, sbo_fu_m, method)
+kapplan_meier(ad[case == "exposed"], sbo_surgery_patreg2, sbo_surgery_fu_m2, method)
 ```
 
 ### Model 2 : Neoadjuvant radiotherapy
@@ -482,4 +507,9 @@ bind_rows(
     )
 ) %>%
     table_dt(caption = glue("Model 2: Neoadj radiation therapy in rectal cancer patients, confounders={paste(confounders2, collapse = ', ')}"))
+```
+
+```{r km model 2}
+kapplan_meier(ad[case == "exposed" & tumour_location == "rectum"], sbo_patreg, sbo_fu_m, exp_neoadj_rt)
+kapplan_meier(ad[case == "exposed" & tumour_location == "rectum"], sbo_surgery_patreg2, sbo_surgery_fu_m2, exp_neoadj_rt)
 ```

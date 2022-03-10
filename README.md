@@ -26,42 +26,12 @@
 19. _DONE_ create new fake data
 20. _DONE_ Change all infiles in 2_create_analysisdata.rdm
 21. _DONE_ run_create_analysisdata()
-22. Cencor comparators that become exposed (create_analysisdata())
-23. Crete new strata definitions in results according to tables in analysisplan (done in results.rmd)
-24. _Ongoing_ Create results
+22. _DONE_ Cencor comparators that become exposed (create_analysisdata())
+23. _DONE_ add postoperation variables
+24. _DONE_ add model variables (metod, pT, tid kirurgi, tumorniva (a2_rscop kategoriserad))
 
-# Questions
-
-1. SBO mechanisms:
-   Should hernia and stoma closure be assessed in between exposure and outcome (SBO only or surgery also) _asuming same time as SBO_
-
-2. Should time to SBO surgery be assessed from SBO or from exposure (procedure date)?
-
-3. When should stoma closure be assessed?
-
-4. Should abdominal pain be assessed both at baseline and as secondary outcome?
-
-5. aim: surgery -> SBO
-
-   - exposed only, descriptive [incidence and timing] and validation[ppv] of scrcr,
-   - relative risk to comparators (patreg data only)
-
-6. Should minimal surgery be the exposure instead of surgery?
-
-7. Secondary outcomes?
-
-   - abpain?
-   - stoma closure?
-
-8. There are relapses occurring before index date when using the patient register. How should they be handled?
-
-9. Relapse taken from
-
-10. Cause specific risks
-
-11. Remove scrcr as a source for relapse as it is not available for comparators
-
-12. Is this interesting to compare agains general population? Seems the hr will be ~10
+- exponering: metod (open/lapa[a2_lapa]) / adjuvant stralning (neoadj_rt)
+- pT, tid kirurgi, tumour_level (a2_rscop, 0-5, 6-10, 11-15)
 
 # Aim
 

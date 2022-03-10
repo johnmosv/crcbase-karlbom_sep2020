@@ -388,13 +388,16 @@ pop[, bs_path_t_stage := pt]
 pop[, bs_path_t_stage_cat := pt_cat]
 
 # Location of tumour
+pop$tumour_location <- define_tumour_location(pop$location)
+pop$tumour_side <- define_tumour_side(pop$col_location)
 pop[, bs_location_of_tumour := case_when(
-    location == "rectum" ~ "rectum",
-    col_location == "right" ~ "right",
-    col_location == "left" ~ "left",
+    tumour_location == "rectum" ~ "rectum",
+    tumour_side == "right" ~ "right",
+    tumour_side == "left" ~ "left",
+    tumour_location == "colon" ~ "colon-unknown side",
     TRUE ~ ""
 )]
-
+tabyl(pop$bs_location_of_tumour)
 # Colorectal cancer surgery type (surgery_type)
 pop$bs_surgery_type <- pop$surgery_type
 
