@@ -78,7 +78,9 @@ tabyl(ad, case)
 
 ```{r}
 
-# Age at proceduredate. Cannot find birthdate
+# Age at proceduredate. Cannot find birthdate,
+# using birthyear instead to estimate age at proceduredate
+ad[, age_index_year := index_year - birthyear]
 
 # Categorize follow up time
 cat_followup <- function(x) {
@@ -92,7 +94,6 @@ ad[, `:=`(
     sbo_surgery_fu_cat_m2 = cat_followup(sbo_surgery_fu_m2),
     sbo_surgery_scrcr_fy_cat_m = cat_followup(sbo_surgery_scrcr_fu_m)
 )]
-
 ```
 
 # Results
@@ -108,8 +109,8 @@ table1_fun <- function(data, group = "") {
     tabl <- data[,
         .(
             n = .N,
-            diagage_mean = mean_sd(diagage),
-            diagage_median = median_iqr(diagage),
+            age_indexyear_mean = mean_sd(age_index_year),
+            age_indexyear_median = median_iqr(age_index_year),
             women = n_per(female),
             cci_0 = n_per(cci_weighted == 0),
             cci_1 = n_per(cci_weighted == 1),
@@ -364,6 +365,8 @@ bind_rows(
 
 - Incidence per 1000 person years.
 - Incidence CI estimated using the exact method (ref).
+
+
 ### Cumulative Incidence function (CIF)
 
 - Competing risk = 'death'
@@ -498,7 +501,7 @@ bind_rows(
         print_summary = TRUE
     ),
     inc_hr_row(
-        x = ad[case == "exposed"],
+        x = ad[case == "exposed" & tumour_location == "rectum"],
         outcome_in = sbo_surgery_patreg2,
         persontime_in = sbo_surgery_fu_m2,
         exposure_var = exp_neoadj_rt,
