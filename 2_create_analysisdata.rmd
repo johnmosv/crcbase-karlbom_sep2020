@@ -159,6 +159,10 @@ purrr::imap_dfr(import_tables, function(tbl, name) {
 
 Most inclusion/exclusion criterion are alrady applied in `1_create_original_data.rmd`.
 
+```{r studypopulation size}
+studypop[,.N, by = "case"]
+```
+
 Applies in this file:
 
 - previous colorectal cancer

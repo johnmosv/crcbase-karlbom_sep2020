@@ -394,7 +394,7 @@ ad[, status_sbo_surgery := case_when(
 
 
 ```{r cif sbo}
-cif_sbo <- cuminc(
+cif_sbo <- cmprsk::cuminc(
     ftime = ad$sbo_fu_m,
     fstatus = ad$status_sbo,
     group = ad$case,
@@ -407,6 +407,10 @@ cif_table(cif_obj = cif_sbo, timepoints = c(18, 41, 66)) %>%
  under the competing risk of death")
 ```
 
+```{r}
+plot(cif_sbo)
+cif_sbo[1:2]
+```
 ```{r plot cif}
 
 survminer::ggcompetingrisks(cif_sbo, multiple_panels = F) +
@@ -428,7 +432,29 @@ survminer::ggcompetingrisks(cif_sbo, multiple_panels = F) +
         legend.title = element_text(face = "bold")
     )
 ```
+__Main event (sbo) only__
 
+```{r plot cif2}
+
+survminer::ggcompetingrisks(cif_sbo[1:2], multiple_panels = F) +
+    ggtitle("") +
+    scale_linetype_manual(
+        name = "Cohort:",
+        values = c("dashed", "solid"),
+        labels = c("Comparators", "Exposes")
+    ) + 
+    scale_color_manual(
+        name = "Event:",
+        values = c("black"),
+        labels = c("SBO")
+    ) +
+    scale_y_continuous(name = "Cumulaitve incidence (%)") +
+    scale_x_continuous(name = "Follow up time (months)", breaks = c(0, 18, 41, 66, 125)) +
+    theme(
+        legend.position = c(0.2, 0.8),
+        legend.title = element_text(face = "bold")
+    )
+```
 
 ## Part 2: SCRCR population only
 
@@ -458,16 +484,20 @@ bind_rows(
         x = ad[case == "exposed"],
         outcome_in = sbo_patreg,
         persontime_in = sbo_fu_m,
-        exposure_var = method, ref = "open",
+        exposure_var = method, 
+        ref = "open",
         confounder = confounders1,
+        crude_hr = TRUE,
         print_summary = TRUE
     ),
     inc_hr_row(
         x = ad[case == "exposed"],
         outcome_in = sbo_surgery_patreg2,
         persontime_in = sbo_surgery_fu_m2,
-        exposure_var = method, ref = "open",
+        exposure_var = method, 
+        ref = "open",
         confounder = confounders1,
+        crude_hr = TRUE,
         print_summary = TRUE
     )
 ) %>%
@@ -498,6 +528,7 @@ bind_rows(
         persontime_in = sbo_fu_m,
         exposure_var = exp_neoadj_rt,
         confounder = confounders2,
+        crude_hr = TRUE,
         print_summary = TRUE
     ),
     inc_hr_row(
@@ -506,6 +537,7 @@ bind_rows(
         persontime_in = sbo_surgery_fu_m2,
         exposure_var = exp_neoadj_rt,
         confounder = confounders2,
+        crude_hr = TRUE,
         print_summary = TRUE
     )
 ) %>%
